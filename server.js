@@ -138,23 +138,49 @@ app.post('/create-session', async (req, res) => {
     if (!sessionKey) return res.status(504).json({ error: 'session_timeout' });
 
     // 4. Consume credentials for browser
-    const consumeRes = await fetch(
-      `${runway.baseURL}/v1/realtime_sessions/${sessionId}/consume`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${sessionKey}`,
-          'X-Runway-Version': '2024-11-06',
-        },
-      }
-    );
-    const credentials = await consumeRes.json();
+    const consumeUrl = `https://api.dev.runwayml.com/v1/realtime_sessions/${sessionId}/consume`;
+    console.log(`[consume] POST ${consumeUrl}`);
+    const consumeRes = await fetch(consumeUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${sessionKey}`,
+        'X-Runway-Version': '2024-11-06',
+      },
+    });
+    const consumeText = await consumeRes.text();
+    console.log(`[consume] status=${consumeRes.status} body=${consumeText.slice(0, 500)}`);
+    
+    if (!consumeRes.ok) {
+      return res.status(500).json({
+        error: 'consume_failed',
+        status: consumeRes.status,
+        body: consumeText.slice(0, 500),
+      });
+    }
+    
+    let credentials;
+    try {
+      credentials = JSON.parse(consumeText);
+    } catch (parseErr) {
+      return res.status(500).json({ error: 'consume_parse_failed', body: consumeText.slice(0, 200) });
+    }
+    
+    const serverUrl = credentials.url || credentials.serverUrl || credentials.livekitUrl;
+    const token = credentials.token || credentials.accessToken;
+    
+    if (!serverUrl || !token) {
+      return res.status(500).json({
+        error: 'missing_credentials',
+        gotKeys: Object.keys(credentials),
+        gotPayload: credentials,
+      });
+    }
 
     res.json({
       sessionId,
-      serverUrl: credentials.url,
-      token: credentials.token,
-      roomName: credentials.roomName,
+      serverUrl,
+      token,
+      roomName: credentials.roomName || credentials.room,
     });
   } catch (e) {
     console.error('[create-session error]', e);
