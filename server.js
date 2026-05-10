@@ -145,7 +145,9 @@ app.post('/create-session', async (req, res) => {
       headers: {
         'Authorization': `Bearer ${sessionKey}`,
         'X-Runway-Version': '2024-11-06',
+        'Content-Type': 'application/json',
       },
+      body: '{}',
     });
     const consumeText = await consumeRes.text();
     console.log(`[consume] status=${consumeRes.status} body=${consumeText.slice(0, 500)}`);
