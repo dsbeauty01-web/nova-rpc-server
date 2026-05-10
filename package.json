@@ -1,18 +1,17 @@
 {
   "name": "nova-rpc-server",
   "version": "1.0.0",
-  "description": "Node server hosting Runway backend_rpc handler for Nova Dance — Claude Haiku is the brain steering the avatar",
+  "description": "Node server hosting Runway backend_rpc handler — Claude Haiku is Nova's brain",
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@runwayml/avatars-node-rpc": "github:runwayml/avatars-node-rpc",
+    "@runwayml/avatars-node-rpc": "^0.1.0",
     "@runwayml/sdk": "^1.0.0",
     "@anthropic-ai/sdk": "^0.30.0",
     "express": "^4.21.0",
