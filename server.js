@@ -36,11 +36,34 @@ app.post('/create-session', async (req, res) => {
       return res.status(500).json({ error: 'RUNWAYML_API_SECRET not set on server' });
     }
 
-    const sessionResp = await runway.avatars.realtime.sessions.create({
-      avatarId: NOVA_AVATAR_ID,
+    // Create a Runway realtime session for the avatar
+    const sessionResp = await runway.realtimeSessions.create({
+      model: 'gwm1_avatars',
+      avatar: {
+        type: 'custom',
+        avatarId: NOVA_AVATAR_ID,
+      },
     });
 
-    const sid = sessionResp.id || sessionResp.sessionId || ('nova-' + Date.now());
+    const sid = sessionResp.id || ('nova-' + Date.now());
+
+    // Poll until session is READY (Runway provisions in ~5-15s)
+    let ready = null;
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 45000) {  // up to 45s
+      const status = await runway.realtimeSessions.retrieve(sid);
+      console.log(`[create-session] ${sid} status=${status.status}`);
+      if (status.status === 'READY') {
+        ready = status;
+        break;
+      }
+      if (status.status === 'FAILED' || status.status === 'CANCELLED') {
+        throw new Error(`Session ${status.status}`);
+      }
+      await new Promise(r => setTimeout(r, 1500));
+    }
+
+    if (!ready) throw new Error('Session did not become READY within 45s');
     sessions.set(sid, {
       id: sid,
       phase: 'arrival',
@@ -49,12 +72,13 @@ app.post('/create-session', async (req, res) => {
       createdAt: Date.now(),
     });
 
-    console.log(`[create-session] runway sid=${sid}`);
+    console.log(`[create-session] READY sid=${sid}`);
     res.json({
       sessionId: sid,
-      runwayUrl: sessionResp.url || sessionResp.connectionUrl || null,
-      token: sessionResp.token || sessionResp.accessToken || null,
-      raw: sessionResp,
+      id: sid,
+      sessionKey: ready.sessionKey,  // Bearer token for /consume
+      expiresAt: ready.expiresAt,
+      raw: ready,
     });
   } catch (e) {
     console.error('[create-session] ERROR', e?.message || e);
