@@ -64,6 +64,24 @@ app.post('/create-session', async (req, res) => {
     }
 
     if (!ready) throw new Error('Session did not become READY within 45s');
+
+    // Call Runway's /consume endpoint with the sessionKey to get LiveKit creds
+    const consumeResp = await fetch('https://api.dev.runwayml.com/v1/realtime_sessions/' + sid + '/consume', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + ready.sessionKey,
+        'X-Runway-Version': '2024-11-06',
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!consumeResp.ok) {
+      const errText = await consumeResp.text();
+      throw new Error('Consume failed: ' + consumeResp.status + ' ' + errText);
+    }
+    const consume = await consumeResp.json();
+    console.log('[create-session] consume returned', JSON.stringify(consume).slice(0, 200));
+
     sessions.set(sid, {
       id: sid,
       phase: 'arrival',
@@ -76,9 +94,12 @@ app.post('/create-session', async (req, res) => {
     res.json({
       sessionId: sid,
       id: sid,
-      sessionKey: ready.sessionKey,  // Bearer token for /consume
+      // Pass through what /consume returned — client looks for serverUrl + token
+      serverUrl: consume.serverUrl || consume.url || consume.wsUrl,
+      token: consume.token || consume.accessToken || consume.participantToken,
+      sessionKey: ready.sessionKey,
       expiresAt: ready.expiresAt,
-      raw: ready,
+      raw: { ready, consume },
     });
   } catch (e) {
     console.error('[create-session] ERROR', e?.message || e);
