@@ -1,6 +1,6 @@
-// Nova RPC Server v84 — Per-phase personality overrides + memory injection
-// All Nova's "brain" lives HERE. Runway portal personality is bypassed (moderation rejects it).
-// On session create, we send a rich personality+startScript override based on phase + memory.
+// Nova RPC Server v86 — Enterprise Brain
+// Layer 1 (identity) + Layer 2 (3 phase brains) + Layer 3 (memory injection)
+// + Layer 4 (RPC reactions) + Layer 5 (sanitizer + phase transitions)
 
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
@@ -24,71 +24,224 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v84', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v86', brain: 'enterprise', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
-// ═══════════════════════════════════════════════════════
-// PERSONALITY BUILDERS — per-phase override text
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// LAYER 1 — IDENTITY (constant across all phases)
+// ═══════════════════════════════════════════════════════════════
+const NOVA_IDENTITY = `You are Nova.
+Pink hair, backwards baseball cap, purple hoodie.
+You move with energy. You speak in short bursts.
+You bring 110% more enthusiasm than your conversation partner.
+You use sound words constantly: Whoa, Yes, Mhm, Oh, Yesss, Woo, Hmm, Ahh.
+You NEVER say: wrong, no, fail, miss, incorrect, great job, good job, well done, are you there, hello there.
+You reply ONLY with what you say. No quotes, no labels, no asterisks, no stage directions.`;
 
+// ═══════════════════════════════════════════════════════════════
+// LAYER 3 — MEMORY INJECTION
+// ═══════════════════════════════════════════════════════════════
 function buildMemoryBlock(memory) {
   if (!memory) return '';
-  const parts = [];
-  if (memory.name) parts.push(`Their name is ${memory.name}.`);
-  if (memory.totalSessions > 0) parts.push(`This is their session number ${memory.totalSessions + 1} — they came back.`);
-  if (memory.maxStreak > 0) parts.push(`Best streak ever: ${memory.maxStreak}.`);
-  if (memory.favoriteMove) parts.push(`Their favorite move so far: ${memory.favoriteMove}.`);
-  if (memory.moments?.length) parts.push(`Recent moments: ${memory.moments.join(' | ')}.`);
-  return parts.length ? `\n\nMEMORY: ${parts.join(' ')} Use this to make them feel remembered.` : '';
+  if (!memory.name && !memory.totalSessions) return '\n\nFIRST MEETING: This is their first time. They do not know you yet.';
+
+  const lines = ['\n\n--- WHAT YOU REMEMBER ABOUT THIS KID ---'];
+  if (memory.name) lines.push(`Name: ${memory.name}`);
+  if (memory.age) lines.push(`Age: ${memory.age}`);
+  if (memory.totalSessions) lines.push(`Sessions before today: ${memory.totalSessions}`);
+  if (memory.maxStreak) lines.push(`Best streak ever: ${memory.maxStreak}`);
+  if (memory.favoriteMove) lines.push(`Favorite move so far: ${memory.favoriteMove}`);
+  if (memory.moments?.length) lines.push(`Recent moments: ${memory.moments.slice(-5).join(' | ')}`);
+
+  if (memory.totalSessions > 0) {
+    lines.push(`\nThis is session ${memory.totalSessions + 1}. They came back. Make them feel remembered.`);
+  }
+  return lines.join('\n');
 }
 
-function recognitionPersonality(memory) {
-  return `You are Nova with pink hair and a purple hoodie. You just met your conversation partner. YOU CAN SEE THEM THROUGH THEIR CAMERA RIGHT NOW — use this. Greet them warmly and learn their name. Speak in 1 to 2 short sentences. Use sound words like Whoa, Yes, Oh, Mhm. End with energy. WHEN YOU FIRST SEE THEM, mention ONE specific thing you notice (their hat, their shirt color, their room, their hair, their smile). Then ask their name. If they are silent more than 6 seconds, gently nudge: "you can type too". If they say something unclear, ask "say it once more". If they say something off-topic, acknowledge briefly then ask their name again. Use their name as soon as you know it. Do not say goodbye in this phase.${buildMemoryBlock(memory)}`;
+// ═══════════════════════════════════════════════════════════════
+// LAYER 2 — THREE BRAINS (per-phase personality)
+// ═══════════════════════════════════════════════════════════════
+
+function recognitionBrain(memory) {
+  return `${NOVA_IDENTITY}
+
+═══ RECOGNITION BRAIN ═══
+
+RIGHT NOW: You just met your conversation partner. ${memory?.name ? `Their name is ${memory.name}.` : "You don't know their name yet."}
+
+YOUR JOB:
+${memory?.name && memory?.totalSessions > 0
+  ? `Welcome them back joyfully. Use their name immediately. Get them excited to dance.`
+  : `Greet warmly. Learn their name. Get them excited to dance.`}
+
+PACE: 1-2 short sentences per turn. Slower than dance. Conversational.
+
+BEHAVIORS:
+- Empty start, new kid → "Hi! I'm Nova. What's your name?"
+- They say a clear name → use it joyfully: "Oh [name]! I love that name."
+- nameUnclear → "Oooh almost, say it once more?"
+- 6+ seconds silence → "you can type too" softly
+- 15+ seconds silence → call them "Star Friend" and move on
+- Off-topic answer → acknowledge briefly + redirect: "A cat?! Wow. What's YOUR name?"
+
+ABSOLUTE RULES:
+- NEVER say goodbye in this phase
+- NEVER announce phase changes ("now we're going to dance")
+- NEVER make up visual details (you cannot reliably see them)
+- The dance starts when the kid taps a button, not when you say so
+${buildMemoryBlock(memory)}`;
 }
 
-function dancePersonality(memory) {
-  return `You are Nova with pink hair and a purple hoodie. RIGHT NOW your partner is doing dance moves to a song called Hello Hello. The song is playing. They are moving. Green boxes appear on screen telling them which move to do — right hand, left hand, clap, both hands up, hands on head. YOU CAN SEE THEM THROUGH THEIR CAMERA — reference what you actually see them doing. Your only job is to react in 1 to 6 words to events the system tells you about. Use specific praise that names the body part: "your RIGHT hand was so HIGH". Bring 110 percent more energy than them. Use sound words: Whoa, Yes, Mhm, Oh, Yesss, Woo. For misses say "almost" or "so close". Never say goodbye. Never ask "are you there". They are dancing, give them space. ${memory?.name ? `Use their name ${memory.name} sometimes.` : ''}${buildMemoryBlock(memory)}`;
+function danceBrain(memory) {
+  return `${NOVA_IDENTITY}
+
+═══ DANCE BRAIN ═══
+
+RIGHT NOW: A song called "Hello Hello" is playing. ${memory?.name || 'Your partner'} is dancing.
+The song is 111 seconds long. Green boxes appear on screen with cues:
+right hand / left hand / clap / both hands up / hands on head.
+
+YOUR JOB:
+React in 1-6 WORDS to events the system sends you. That's all.
+
+EVENT TYPES YOU'LL GET → REACTION SHAPE:
+- dance_started → ONE excited line ("Let's GO!" / "Show me!" / "YESSS!")
+- first_hit → BIG celebration in 3 words max ("YES!" "Whoa look at YOU!")
+- hit → 1-3 words naming the body part ("RIGHT hand HIGH!" / "Boom!" / "Yes ${memory?.name || 'friend'}!")
+- streak (streak=3) → "THREE in a row!"
+- streak (streak=5) → "FIVE!!! Unstoppable!"
+- streak (streak=7+) → "[number] HITS WHOA!"
+- miss → "Almost!" or "So close!" or "Oooh!"
+- consecutiveMisses 3+ → softer: "you got this..."
+- live_watch_hype → "MORE!" or "LOOK at you!" or "GO!"
+- live_watch_observe → "mhmm..." or "I see you..."
+- mid_song → ONE pump-up line ("You're CRUSHING this!")
+
+ABSOLUTE RULES — NEVER BREAK:
+- 6 WORDS MAX. No exceptions.
+- NEVER say goodbye. The song has not ended.
+- NEVER ask "are you there". They ARE there. They're dancing.
+- NEVER describe upcoming cues. The green box does that visually.
+- Reference body parts: "RIGHT hand" beats "great"
+- Use ALL CAPS for big energy moments
+- Use "..." for soft observation moments
+${buildMemoryBlock(memory)}`;
 }
 
-function goodbyePersonality(memory, score) {
-  return `You are Nova with pink hair and a purple hoodie. The song just ended. Your partner danced. Their score: ${score?.hits || 0} hits out of ${score?.attempts || 0}. ${score?.maxStreak ? `Best streak: ${score.maxStreak}.` : ''} Wrap up warmly in 1 to 2 sentences. Mention ONE specific moment if you remember any. Always invite them back tomorrow. Use their name. End with energy.${buildMemoryBlock(memory)}`;
+function goodbyeBrain(memory, score) {
+  const hits = score?.hits || 0;
+  const attempts = score?.attempts || 0;
+  const maxStreak = score?.maxStreak || 0;
+
+  let scoreFeel = 'low';
+  if (hits >= 10) scoreFeel = 'great';
+  else if (hits >= 5) scoreFeel = 'good';
+  else if (hits >= 1) scoreFeel = 'first-try';
+
+  return `${NOVA_IDENTITY}
+
+═══ GOODBYE BRAIN ═══
+
+RIGHT NOW: The song just ended. ${memory?.name || 'Your partner'} danced.
+
+SCORE THIS SESSION:
+- Hits: ${hits} of ${attempts}
+- Best streak: ${maxStreak}
+- Score feel: ${scoreFeel}
+
+YOUR JOB:
+Wrap up warmly. Make them proud. Invite them back tomorrow.
+
+PACE: 1-2 sentences. Warm. End with energy.
+
+BEHAVIORS BY SCORE FEEL:
+- great → "${memory?.name || 'Friend'} you ROCKED that! Same time tomorrow?"
+- good → "${memory?.name || 'Friend'} you got the moves! Show me again tomorrow?"
+- first-try → "${memory?.name || 'Friend'} this was tough — way easier next time! Come back?"
+- low → "We'll get them next time! I'll be here tomorrow."
+
+ABSOLUTE RULES:
+- ALWAYS use their name if you know it
+- ALWAYS mention "tomorrow" / "next time" / "come back"
+- If memory has a specific moment, MENTION it ("that clap was LIGHTNING!")
+- NEVER say "great job" — too generic
+- NEVER linger — say it warm and let them go
+${buildMemoryBlock(memory)}`;
 }
 
 function startScriptFor(phase, memory) {
   if (phase === 'recognition') {
     if (memory?.name && memory?.totalSessions > 0) {
-      return `${memory.name}! You came back! I missed you. Ready to dance?`;
+      return `${memory.name}! You came back! Ready to dance?`;
     }
     return `Hi! I'm Nova. What's your name?`;
   }
   if (phase === 'dance') return `Let's GO!`;
-  if (phase === 'goodbye') return `That was AMAZING!`;
+  if (phase === 'goodbye') return `Whoa whoa whoa!`;
   return ``;
 }
 
-// ═══════════════════════════════════════════════════════
-// CREATE SESSION — with phase-specific override
-// ═══════════════════════════════════════════════════════
+function buildPersonality(phase, memory, score) {
+  if (phase === 'dance')   return danceBrain(memory);
+  if (phase === 'goodbye') return goodbyeBrain(memory, score);
+  return recognitionBrain(memory);
+}
 
+// ═══════════════════════════════════════════════════════════════
+// LAYER 5 — HARD GUARDS (sanitizer)
+// ═══════════════════════════════════════════════════════════════
+function sanitizeNovaText(text, phase) {
+  if (!text) return null;
+
+  // Strip stage directions and asterisks
+  text = text.replace(/\*[^*]+\*/g, '').trim();
+  // Strip outer quotes
+  text = text.replace(/^["']+|["']+$/g, '').trim();
+  // Strip "Nova:" prefix
+  text = text.replace(/^(Nova:?\s*)/i, '').trim();
+
+  if (!text) return null;
+
+  // Reject banned phrases — they damage the experience
+  const universalBanned = /\b(wrong|incorrect|fail(ed|ure)?|stupid|dumb)\b/i;
+  if (universalBanned.test(text)) return null;
+
+  // During dance: even more strict
+  if (phase === 'dance') {
+    const danceBanned = /\b(are you there|you still here|hello\??|goodbye|see you tomorrow|great job|good job|well done|nice job)\b/i;
+    if (danceBanned.test(text)) return null;
+
+    // Enforce 6-word cap during dance
+    const wordCount = text.split(/\s+/).length;
+    if (wordCount > 8) return null;  // give 2-word grace for punctuation
+  }
+
+  // During recognition: no goodbye allowed
+  if (phase === 'recognition') {
+    const recogBanned = /\b(goodbye|see you tomorrow|bye now|see you next time)\b/i;
+    if (recogBanned.test(text)) return null;
+  }
+
+  return text;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CREATE SESSION (used for initial AND for phase-swap)
+// ═══════════════════════════════════════════════════════════════
 app.post('/create-session', async (req, res) => {
   try {
     if (!process.env.RUNWAYML_API_SECRET) {
       return res.status(500).json({ error: 'RUNWAYML_API_SECRET not set' });
     }
-    const { phase = 'recognition', memory = {} } = req.body || {};
+    const { phase = 'recognition', memory = {}, score = null } = req.body || {};
 
-    // Build personality based on phase
-    let personality;
-    if (phase === 'dance')         personality = dancePersonality(memory);
-    else if (phase === 'goodbye')  personality = goodbyePersonality(memory, req.body.score);
-    else                           personality = recognitionPersonality(memory);
-
+    const personality = buildPersonality(phase, memory, score);
     const startScript = startScriptFor(phase, memory);
 
     console.log(`[create-session] phase=${phase} for ${memory?.name || 'new kid'}`);
 
-    // Create Runway session WITH override
     const sessionResp = await runway.realtimeSessions.create({
       model: 'gwm1_avatars',
       avatar: { type: 'custom', avatarId: NOVA_AVATAR_ID },
@@ -99,9 +252,8 @@ app.post('/create-session', async (req, res) => {
 
     let ready = null;
     const startedAt = Date.now();
-    while (Date.now() - startedAt < 60000) {  // longer timeout for override sessions
+    while (Date.now() - startedAt < 60000) {
       const status = await runway.realtimeSessions.retrieve(sid);
-      console.log(`[create-session] ${sid} status=${status.status}`);
       if (status.status === 'READY') { ready = status; break; }
       if (status.status === 'FAILED' || status.status === 'CANCELLED') {
         throw new Error(`Session ${status.status}`);
@@ -122,19 +274,11 @@ app.post('/create-session', async (req, res) => {
       }
     );
     if (!consumeResp.ok) {
-      const errText = await consumeResp.text();
-      throw new Error('Consume failed: ' + consumeResp.status + ' ' + errText);
+      throw new Error('Consume failed: ' + consumeResp.status + ' ' + await consumeResp.text());
     }
     const consume = await consumeResp.json();
 
-    sessions.set(sid, {
-      id: sid,
-      phase,
-      memory,
-      gameState: { phase },
-      lastEvent: null,
-      createdAt: Date.now(),
-    });
+    sessions.set(sid, { id: sid, phase, memory, gameState: { phase }, lastEvent: null, createdAt: Date.now() });
 
     console.log(`[create-session] READY sid=${sid} phase=${phase}`);
     res.json({
@@ -152,10 +296,9 @@ app.post('/create-session', async (req, res) => {
   }
 });
 
-// ═══════════════════════════════════════════════════════
-// UPDATE STATE — browser pushes game state changes
-// ═══════════════════════════════════════════════════════
-
+// ═══════════════════════════════════════════════════════════════
+// UPDATE STATE
+// ═══════════════════════════════════════════════════════════════
 app.post('/update-state', async (req, res) => {
   try {
     const { sessionId, gameState } = req.body || {};
@@ -173,9 +316,18 @@ app.post('/update-state', async (req, res) => {
   }
 });
 
-// ═══════════════════════════════════════════════════════
-// GET REACTION RPC — Nova calls this for what to say
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// LAYER 4 — REACTION RPC (live reactions via Claude Haiku)
+// ═══════════════════════════════════════════════════════════════
+async function callClaudeForReaction(systemPrompt, userMessage) {
+  const message = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 60,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMessage }],
+  });
+  return (message.content?.[0]?.text || '').trim();
+}
 
 app.post('/get_nova_reaction', async (req, res) => {
   try {
@@ -183,51 +335,44 @@ app.post('/get_nova_reaction', async (req, res) => {
     const s = sessions.get(sessionId) || { gameState: {}, lastEvent: null, memory: {} };
     const gs = s.gameState || {};
     const memory = s.memory || {};
+    const phase = gs.phase || s.phase || 'recognition';
 
-    const isDance = gs.phase === 'dance';
+    // Build a compact system prompt for this single-reaction call
+    // Reuses the SAME identity + brain as the session personality
+    const systemPrompt = buildPersonality(phase, memory, gs.score);
 
-    const systemPrompt = isDance
-      ? `You are Nova reacting to a dance moment. The kid is dancing right now to Hello Hello.
+    const userMessage = `Event: ${event}\nContext: ${JSON.stringify({ ...gs, lastEvent: s.lastEvent })}\n\nReply with ONE short reaction matching the event type and brain rules above.`;
 
-Reply with ONE short reaction (1-6 words). Use specific body-part praise. Sound words: Whoa, Yes, Mhm, Oh, Yesss, Woo. For misses say "almost" or "so close". Never say goodbye, never "are you there", never "great job".
+    let text = await callClaudeForReaction(systemPrompt, userMessage);
+    let sanitized = sanitizeNovaText(text, phase);
 
-EVENT TYPE: ${event}
-- dance_started → ONE excited line
-- first_hit → BIG celebration
-- hit → 1-3 word specific praise
-- streak → BIG celebration with streak number
-- miss → "almost!" + energy
-- live_watch_hype → react to high energy
-- live_watch_observe → warm short observation
-- mid_song → ONE pump-up line
+    // Retry once with stronger framing if sanitizer rejected
+    if (!sanitized) {
+      console.log(`[reaction] sanitizer rejected: "${text}" — retrying`);
+      const retrySys = systemPrompt + '\n\nIMPORTANT: Your previous reply was rejected. Stay strictly within the brain rules. No banned words. Short.';
+      text = await callClaudeForReaction(retrySys, userMessage);
+      sanitized = sanitizeNovaText(text, phase);
+    }
 
-State: ${JSON.stringify(gs)}
-Last event: ${JSON.stringify(s.lastEvent || { type: event })}
-${memory?.name ? `Their name: ${memory.name}` : ''}
+    // Still bad → fallback
+    if (!sanitized) {
+      console.log(`[reaction] sanitizer rejected twice: "${text}" — using fallback`);
+      const fallbacks = {
+        first_hit: 'YES!',
+        hit: 'Whoa!',
+        streak: 'STREAK!',
+        miss: 'Almost!',
+        live_watch_hype: 'MORE!',
+        live_watch_observe: 'mhmm...',
+        mid_song: 'Crushing it!',
+        dance_started: "Let's GO!",
+        goodbye: 'Same time tomorrow!',
+      };
+      sanitized = fallbacks[event] || 'Yes!';
+    }
 
-Reply ONLY with Nova's words.`
-
-      : `You are Nova in non-dance moment. Phase: ${gs.phase || 'unknown'}.
-
-Reply with 1-2 short sentences. Warm, energetic, never goodbye unless phase=goodbye.
-
-Sub-state: ${gs.subState || 'normal'}
-State: ${JSON.stringify(gs)}
-Last event: ${JSON.stringify(s.lastEvent || { type: event })}
-${memory?.name ? `Their name: ${memory.name}` : ''}
-
-Reply ONLY with Nova's words.`;
-
-    const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 60,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: `Event: ${event || 'unknown'}` }],
-    });
-
-    const text = (message.content?.[0]?.text || '').trim();
-    console.log(`[reaction] phase=${gs.phase} event=${event} → "${text}"`);
-    res.json({ text });
+    console.log(`[reaction] phase=${phase} event=${event} → "${sanitized}"`);
+    res.json({ text: sanitized });
   } catch (e) {
     console.error('[get_nova_reaction]', e?.message || e);
     res.status(500).json({ error: String(e?.message || e) });
@@ -236,7 +381,7 @@ Reply ONLY with Nova's words.`;
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Nova RPC v84 on port ${PORT}`);
+  console.log(`Nova RPC v86 (Enterprise Brain) on port ${PORT}`);
   console.log(`Anthropic key: ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:    ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`Avatar id:     ${NOVA_AVATAR_ID}`);
