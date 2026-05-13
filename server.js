@@ -1,4 +1,4 @@
-// Nova RPC Server v89 PEARL — Kinder, smarter, magnetic
+// Nova RPC Server v91 BLACKBOX — Kinder, smarter, magnetic
 // Soft warmth in Recognition. Music-aware reactions in Dance. Mystery hook in Goodbye.
 
 import express from 'express';
@@ -23,7 +23,7 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v89-pearl', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v91-blackbox', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -463,7 +463,7 @@ app.post('/chat', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Nova RPC v89 PEARL on port ${PORT}`);
+  console.log(`Nova RPC v91 BLACKBOX on port ${PORT}`);
   console.log(`Anthropic key: ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:    ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`Avatar id:     ${NOVA_AVATAR_ID}`);
