@@ -429,6 +429,38 @@ app.post('/get_nova_reaction', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// CHAT — direct Claude calls (used by v91 browser brainThink)
+// ═══════════════════════════════════════════════════════════════
+app.post('/chat', async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const { system, messages, max_tokens = 60 } = req.body || {};
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'messages required' });
+    }
+    console.log(`[chat] calling Claude (${messages.length} messages, max_tokens=${max_tokens})`);
+    const msg = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens,
+      system: system || NOVA_IDENTITY,
+      messages,
+    });
+    const text = (msg.content?.[0]?.text || '').trim();
+    const sanitized = sanitizeNovaText(text, 'recognition') || text;
+    const totalMs = Date.now() - t0;
+    console.log(`[chat] reply (${totalMs}ms) → "${sanitized.slice(0, 100)}"`);
+    res.json({
+      content: [{ type: 'text', text: sanitized }],
+      text: sanitized,
+      latencyMs: totalMs,
+    });
+  } catch (e) {
+    console.error('[chat]', e?.message || e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Nova RPC v89 PEARL on port ${PORT}`);
