@@ -1,17 +1,19 @@
 {
   "name": "nova-rpc-server",
-  "version": "1.0.0",
+  "version": "98.0.0",
+  "description": "Nova RPC Server v98 RIGHT — Runway-led with backend RPC tools",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.21.0",
-    "@anthropic-ai/sdk": "^0.32.0",
-    "@runwayml/sdk": "^3.21.0"
+    "@anthropic-ai/sdk": "^0.65.0",
+    "@runwayml/sdk": "^4.0.0",
+    "@runwayml/avatars-node-rpc": "^0.1.0",
+    "express": "^4.21.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.0.0"
   }
 }
