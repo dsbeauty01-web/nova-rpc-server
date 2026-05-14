@@ -1,4 +1,4 @@
-// Nova RPC Server v95 RUBY — Kinder, smarter, magnetic
+// Nova RPC Server v97 BASELINE — Kinder, smarter, magnetic
 // Soft warmth in Recognition. Music-aware reactions in Dance. Mystery hook in Goodbye.
 
 import express from 'express';
@@ -23,7 +23,7 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v95-ruby', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v97-baseline', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -447,31 +447,76 @@ app.post('/get_nova_reaction', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// CHAT — direct Claude calls (used by v91 browser brainThink)
+// CHAT — phase-aware Nova replies (v97 unified brain)
+// Browser sends: { phase, kidMessage, memory, max_tokens }
+// Server applies the right brain for the phase, then sanitizes.
 // ═══════════════════════════════════════════════════════════════
 app.post('/chat', async (req, res) => {
   const t0 = Date.now();
   try {
-    const { system, messages, max_tokens = 60 } = req.body || {};
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return res.status(400).json({ error: 'messages required' });
+    const { phase = 'recognition', kidMessage = '', memory = {}, max_tokens = 60, system, messages } = req.body || {};
+
+    // Back-compat: if legacy clients pass `messages`, route to old-style call.
+    if (messages && Array.isArray(messages) && messages.length > 0) {
+      console.log(`[chat][legacy] ${messages.length} messages, max_tokens=${max_tokens}`);
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens,
+        system: system || NOVA_IDENTITY,
+        messages,
+      });
+      const text = (msg.content?.[0]?.text || '').trim();
+      const sanitized = sanitizeNovaText(text, phase) || text;
+      const totalMs = Date.now() - t0;
+      console.log(`[chat][legacy] reply (${totalMs}ms) → "${sanitized.slice(0, 100)}"`);
+      return res.json({ text: sanitized, content: [{ type: 'text', text: sanitized }], latencyMs: totalMs });
     }
-    console.log(`[chat] calling Claude (${messages.length} messages, max_tokens=${max_tokens})`);
-    const msg = await anthropic.messages.create({
+
+    // v97: phase-aware brain
+    let focusPrompt;
+    if (phase === 'dance') {
+      focusPrompt = danceFocus(memory, 'chat', { motionLevel: 'unknown' });
+    } else if (phase === 'goodbye') {
+      focusPrompt = goodbyeFocus(memory, null);
+    } else {
+      focusPrompt = recognitionFocus(memory, null);
+    }
+    const systemPrompt = `${NOVA_IDENTITY}\n\n${focusPrompt}${buildMemoryBlock(memory)}`;
+    const userMessage = kidMessage
+      ? `The kid just said: "${kidMessage}"\n\nReply with ONE short Nova response. Follow the phase rules above.`
+      : `Reply with ONE short Nova response. Follow the phase rules above.`;
+
+    console.log(`[chat] phase=${phase} kidMessage="${kidMessage.slice(0, 60)}"`);
+    let msg = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens,
-      system: system || NOVA_IDENTITY,
-      messages,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userMessage }],
     });
-    const text = (msg.content?.[0]?.text || '').trim();
-    const sanitized = sanitizeNovaText(text, 'recognition') || text;
+    let text = (msg.content?.[0]?.text || '').trim();
+    let sanitized = sanitizeNovaText(text, phase);
+
+    if (!sanitized) {
+      console.log(`[chat] REJECTED "${text}" — retrying`);
+      const retrySys = systemPrompt + '\n\nIMPORTANT: Previous reply violated Nova\'s rules. Stay strictly in Nova\'s voice. Short. Soft. No banned words.';
+      msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens,
+        system: retrySys,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+      text = (msg.content?.[0]?.text || '').trim();
+      sanitized = sanitizeNovaText(text, phase);
+    }
+
+    if (!sanitized) {
+      console.log(`[chat] REJECTED twice: "${text}" — using fallback`);
+      sanitized = phase === 'dance' ? 'mhmm...' : (memory?.name ? `Hi ${memory.name}...` : 'Oh hi friend...');
+    }
+
     const totalMs = Date.now() - t0;
-    console.log(`[chat] reply (${totalMs}ms) → "${sanitized.slice(0, 100)}"`);
-    res.json({
-      content: [{ type: 'text', text: sanitized }],
-      text: sanitized,
-      latencyMs: totalMs,
-    });
+    console.log(`[chat] reply phase=${phase} (${totalMs}ms) → "${sanitized}"`);
+    res.json({ text: sanitized, content: [{ type: 'text', text: sanitized }], latencyMs: totalMs });
   } catch (e) {
     console.error('[chat]', e?.message || e);
     res.status(500).json({ error: String(e?.message || e) });
@@ -480,7 +525,7 @@ app.post('/chat', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Nova RPC v95 RUBY on port ${PORT}`);
+  console.log(`Nova RPC v97 BASELINE on port ${PORT}`);
   console.log(`Anthropic key: ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:    ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`Avatar id:     ${NOVA_AVATAR_ID}`);
