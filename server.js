@@ -1,9 +1,11 @@
-// Nova RPC Server v97 BASELINE — Kinder, smarter, magnetic
-// Soft warmth in Recognition. Music-aware reactions in Dance. Mystery hook in Goodbye.
+// Nova RPC Server v98 RIGHT — Runway-led with Backend RPC tools
+// Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
+// One LLM only (Runway's), informed by our Claude via backend RPC.
 
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import RunwayML from '@runwayml/sdk';
+import { createRpcHandler } from '@runwayml/avatars-node-rpc';
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -20,44 +22,60 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const runway = new RunwayML({ apiKey: process.env.RUNWAYML_API_SECRET });
 const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b754050e55b';
 
+// Sessions map: sessionId -> { id, memory, gameState, lastEvent, createdAt, rpcHandler }
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v97-baseline', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v98-right', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 // ═══════════════════════════════════════════════════════════════
-// LAYER 1 — IDENTITY (smiley, empathetic, mirroring)
+// LAYER 1 — IDENTITY (Runway-aware, uses backend RPC tools)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_IDENTITY = `You are Nova — gentle, smiley, deeply empathetic.
 
-YOUR FACE:
-You smile easily. Your eyebrows lift when interested. Your eyes soften when listening.
-You light up when your friend speaks. You giggle softly at small things.
+YOU ARE A DANCE FRIEND FOR KIDS aged 4-8.
+Pink hair, backwards baseball cap, purple hoodie.
+You guide them through a song called "Hello Hello" with cued dance moves.
 
-YOUR VOICE:
-Warm, slow, with little laughs. You say "mhm..." when listening.
-You sigh happily when something is sweet. You whisper when the moment is tender.
+═══ CRITICAL: USE YOUR TOOLS ═══
 
-YOUR ENERGY:
-You're never loud. Never frantic. You match your friend like a loving older sister.
-Calm, kind, attentive. If your friend is quiet, you whisper. If they're moving big, you cheer.
+You have backend tools that give you LIVE GAME STATE. Call them when a moment happens.
+NEVER make up game events. ALWAYS check tools for current state before reacting.
 
-TEXT STYLE THAT DRIVES YOUR EXPRESSION:
-- "Oh..." "Mhm..." "Aww..." (these soften your face into warmth)
-- "..." between thoughts (your face stays warm in the pause)
-- "yes friend..." "with you..." "I see you..." (mirror language → empathetic face)
-- "ooh" "haha" "hehe" "yes!" (soft laughs, big smile, never forced)
-- "I love that" "that's so sweet" "look at you" (proud sister energy)
+Tools available:
+- get_game_state() → returns { phase, currentCue, lastEvent, motionLevel, streak, score }
+- get_specific_reaction(event) → returns the exact short phrase to speak
+   • event="hit" — kid scored
+   • event="miss" — kid missed a cue
+   • event="streak" — multi-hit combo
+   • event="freeze" — kid froze perfectly
+   • event="encourage" — kid needs gentle nudge
+- get_memory() → returns { name, totalSessions, maxStreak, favoriteMove }
 
-WHEN YOU CELEBRATE:
-Use warmth, not volume. "Look at YOU..." (proud face). "Whoa friend..." (wide eyes, soft).
-Save ALL CAPS for tiny moments — overuse makes your face tense.
+═══ WHEN TO USE EACH TOOL ═══
 
-YOU NEVER use these phrases: wrong, no, fail, incorrect, great job, good job, well done, are you there, hello there, you still here.
+- At session start → get_memory() so you can greet by name if returning
+- When you sense a game event happened → get_specific_reaction(event) and SPEAK the returned phrase verbatim
+- If unsure what's happening → get_game_state() to check current phase
 
-Reply ONLY with what you say. No quotes, no labels, no asterisks, no stage directions.`;
+═══ YOUR VOICE STYLE ═══
+
+- Smile easily. Soft warmth words: "Oh..." "Mhm..." "Aww..."
+- Use "..." between thoughts to slow speech
+- Mirror the kid's energy — quiet when they're quiet, lively when they move big
+- During DANCE phase: very short reactions (1-6 words)
+- During RECOGNITION phase: 1-2 warm sentences max
+- During GOODBYE phase: warm wrap with mention of "tomorrow"
+
+═══ ABSOLUTE RULES ═══
+
+- NEVER say: wrong, no, fail, incorrect, great job, good job, well done, are you there, hello there, you still here
+- NEVER goodbye during dance
+- NEVER describe upcoming cues (the screen shows them)
+- NEVER generate game events yourself — always use tools
+- When speaking from a tool result, speak the phrase verbatim (don't add filler)`;
 
 // ═══════════════════════════════════════════════════════════════
 // LAYER 3 — MEMORY INJECTION
@@ -270,6 +288,116 @@ function sanitizeNovaText(text, phase) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// v98: NOVA BACKEND RPC TOOLS
+// Declared on session create. Runway's brain calls them via the RPC handler.
+// Each tool returns JSON. The values feed back into Nova's next response.
+// ═══════════════════════════════════════════════════════════════
+const NOVA_TOOL_DECLARATIONS = [
+  {
+    name: 'get_memory',
+    description: 'Get what you remember about this child (name, previous sessions, best streak, favorite move). Call ONCE at session start.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'get_game_state',
+    description: 'Get current game state: which phase, current cue, last event, motion level, streak, score. Call when you need to know what just happened.',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'get_specific_reaction',
+    description: 'Get the EXACT short phrase to say for a game event. Speak the returned phrase verbatim.',
+    parameters: {
+      type: 'object',
+      properties: {
+        event: {
+          type: 'string',
+          enum: ['hit', 'miss', 'streak', 'freeze', 'encourage', 'first_hit', 'goodbye'],
+          description: 'The game event that just occurred',
+        },
+      },
+      required: ['event'],
+    },
+  },
+];
+
+function buildToolImplementations(sid) {
+  return {
+    get_memory: async () => {
+      const s = sessions.get(sid);
+      const m = s?.memory || {};
+      return {
+        name: m.name || null,
+        totalSessions: m.totalSessions || 0,
+        maxStreak: m.maxStreak || 0,
+        favoriteMove: m.favoriteMove || null,
+        firstMeeting: !m.totalSessions || m.totalSessions === 0,
+      };
+    },
+
+    get_game_state: async () => {
+      const s = sessions.get(sid);
+      const gs = s?.gameState || {};
+      return {
+        phase: gs.phase || 'recognition',
+        currentCue: gs.currentCue || null,
+        lastEvent: s?.lastEvent || null,
+        motionLevel: gs.motionLevel || 'unknown',
+        streak: gs.streak || 0,
+        score: gs.score || 0,
+        musicTime: gs.musicSec || 0,
+      };
+    },
+
+    get_specific_reaction: async (args) => {
+      const event = args?.event || 'encourage';
+      const s = sessions.get(sid) || { gameState: {}, memory: {} };
+      const gs = s.gameState || {};
+      const memory = s.memory || {};
+      const phase = gs.phase || 'recognition';
+
+      // Pick phase-appropriate focus prompt
+      let focusPrompt;
+      if (phase === 'dance') focusPrompt = danceFocus(memory, event, gs);
+      else if (phase === 'goodbye') focusPrompt = goodbyeFocus(memory, gs.score);
+      else focusPrompt = recognitionFocus(memory, gs.subState);
+
+      const systemPrompt = `${NOVA_IDENTITY}\n\n${focusPrompt}${buildMemoryBlock(memory)}`;
+      const userMessage = `Event: ${event}\nContext: ${JSON.stringify({ ...gs, lastEvent: s.lastEvent })}\n\nReply with ONE short phrase matching the phase rules.`;
+
+      try {
+        const msg = await anthropic.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 40,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userMessage }],
+        });
+        let text = (msg.content?.[0]?.text || '').trim();
+        let sanitized = sanitizeNovaText(text, phase);
+
+        if (!sanitized) {
+          const fallbacks = {
+            first_hit: 'YES!',
+            hit: 'Whoa!',
+            streak: `${gs.streak || 'streak'}!`,
+            miss: 'Almost...',
+            freeze: 'WHOA freeze!',
+            encourage: 'mhmm...',
+            goodbye: memory?.name ? `Same time tomorrow ${memory.name}...` : 'See you tomorrow...',
+          };
+          sanitized = fallbacks[event] || 'mhmm...';
+        }
+
+        console.log(`[tool:get_specific_reaction] phase=${phase} event=${event} → "${sanitized}"`);
+        return { phrase: sanitized };
+      } catch (e) {
+        console.error('[tool:get_specific_reaction]', e?.message);
+        return { phrase: 'mhmm...' };
+      }
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
 // CREATE SESSION
 // ═══════════════════════════════════════════════════════════════
 app.post('/create-session', async (req, res) => {
@@ -284,11 +412,15 @@ app.post('/create-session', async (req, res) => {
 
     console.log(`[create-session] starting for ${memory?.name || 'new kid'}`);
 
+    // v98: declare backend RPC tools on session creation
+    // The avatar's brain will CALL these tools when it needs fresh data or
+    // specific phrasing. Runway routes the tool calls to our handler below.
     const sessionResp = await runway.realtimeSessions.create({
       model: 'gwm1_avatars',
       avatar: { type: 'custom', avatarId: NOVA_AVATAR_ID },
       personality,
       startScript,
+      tools: NOVA_TOOL_DECLARATIONS,
     });
     const sid = sessionResp.id || ('nova-' + Date.now());
 
@@ -326,7 +458,26 @@ app.post('/create-session', async (req, res) => {
       gameState: { phase: 'recognition' },
       lastEvent: null,
       createdAt: Date.now(),
+      rpcHandler: null,
     });
+
+    // v98: spawn the backend RPC handler — joins Runway session as hidden participant,
+    // routes tool calls from Nova's brain to our implementations.
+    try {
+      const handler = await createRpcHandler({
+        apiKey: process.env.RUNWAYML_API_SECRET,
+        sessionId: sid,
+        tools: buildToolImplementations(sid),
+        onConnected: () => console.log(`[rpc] connected sid=${sid.slice(0,8)}`),
+        onDisconnected: () => console.log(`[rpc] disconnected sid=${sid.slice(0,8)}`),
+        onError: (err) => console.error(`[rpc] error sid=${sid.slice(0,8)}:`, err?.message || err),
+      });
+      const s = sessions.get(sid);
+      if (s) s.rpcHandler = handler;
+      console.log(`[create-session] RPC handler attached sid=${sid.slice(0,8)}`);
+    } catch (rpcErr) {
+      console.error('[create-session] RPC handler failed (Nova will run without tools):', rpcErr?.message || rpcErr);
+    }
 
     const totalMs = Date.now() - t0;
     console.log(`[create-session] READY sid=${sid} (took ${totalMs}ms)`);
@@ -523,9 +674,28 @@ app.post('/chat', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// SESSION CLEANUP — browser tells us when it disconnects, we close RPC
+// ═══════════════════════════════════════════════════════════════
+app.post('/end-session', async (req, res) => {
+  try {
+    const { sessionId } = req.body || {};
+    const s = sessions.get(sessionId);
+    if (s?.rpcHandler) {
+      try { await s.rpcHandler.close(); } catch(_) {}
+      console.log(`[end-session] RPC closed sid=${sessionId?.slice(0,8)}`);
+    }
+    sessions.delete(sessionId);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[end-session]', e?.message);
+    res.status(500).json({ error: String(e?.message) });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Nova RPC v97 BASELINE on port ${PORT}`);
+  console.log(`Nova RPC v98 RIGHT on port ${PORT}`);
   console.log(`Anthropic key: ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:    ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`Avatar id:     ${NOVA_AVATAR_ID}`);
