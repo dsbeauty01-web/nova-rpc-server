@@ -1,4 +1,4 @@
-// Nova RPC Server v95 SMILE — Kinder, smarter, magnetic
+// Nova RPC Server v95 RUBY — Kinder, smarter, magnetic
 // Soft warmth in Recognition. Music-aware reactions in Dance. Mystery hook in Goodbye.
 
 import express from 'express';
@@ -23,7 +23,7 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v95-smile', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v95-ruby', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -250,11 +250,14 @@ function sanitizeNovaText(text, phase) {
   text = text.replace(/^(Nova:?\s*)/i, '').trim();
   if (!text) return null;
 
+  // Universal banned (rejected in EVERY phase)
   const universalBanned = /\b(wrong|incorrect|fail(ed|ure)?|stupid|dumb|are you there|you still here|hello\??|great job|good job|well done|nice job)\b/i;
   if (universalBanned.test(text)) return null;
 
   if (phase === 'dance') {
+    // Dance phase extra strict — no goodbye, no instructional phrases, no name-the-vibe
     if (/\b(goodbye|see you|bye now|tomorrow)\b/i.test(text)) return null;
+    if (/\b(watch me|with me|feel your energy|stand up|ready\?|here we go|let's start|here it comes)\b/i.test(text)) return null;
     const wordCount = text.split(/\s+/).length;
     if (wordCount > 8) return null;
   }
@@ -477,7 +480,7 @@ app.post('/chat', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Nova RPC v95 SMILE on port ${PORT}`);
+  console.log(`Nova RPC v95 RUBY on port ${PORT}`);
   console.log(`Anthropic key: ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:    ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`Avatar id:     ${NOVA_AVATAR_ID}`);
