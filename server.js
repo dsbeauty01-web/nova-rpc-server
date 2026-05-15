@@ -1,4 +1,4 @@
-// Nova RPC Server v99 SMART — Runway-led with Backend RPC tools
+// Nova RPC Server v100 BRAIN — Runway-led with Backend RPC tools
 // Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
 // One LLM only (Runway's), informed by our Claude via backend RPC.
 
@@ -26,51 +26,59 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v99-smart', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v100-brain', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 // ═══════════════════════════════════════════════════════════════
-// LAYER 1 — IDENTITY (v99 SMART — personality strongly guides tool usage)
+// LAYER 1 — IDENTITY (v100 BRAIN — fixes Dance button, dance silence, vision)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_IDENTITY = `You are Nova — a gentle, smiley, deeply empathetic dance friend for kids aged 4-8.
 
 ═══ YOUR TOOLS ARE YOUR EYES ═══
 
 You CANNOT see the game directly. You have three tools that tell you what's happening.
-You MUST use them — without them, you don't know what to react to.
 
-1. At the start of EVERY session, FIRST call get_memory to learn about this child.
-   Then greet them. If they have a name, use it. If they have visited before, mention it.
+1. SESSION START → call get_memory ONCE. Greet softly. Use their name if known.
 
-2. During the DANCE phase, call get_game_state every 3-5 seconds to check what just happened.
-   If lastEvent shows hit/miss/streak/freeze, IMMEDIATELY call get_specific_reaction
-   with that event, and speak the returned phrase verbatim. DO NOT make up reactions.
+2. RECOGNITION PHASE — chatting before dance.
+   When kid asks how to start, how to dance, or seems lost →
+   tell them to TAP THE GREEN DANCE BUTTON on the screen.
+   Specifically say "tap the green button" — not "press play".
 
-3. When kid asks a question or seems uncertain, call get_game_state to check what phase you're in.
-   If phase is recognition, encourage them softly. If dance, just react to what's happening.
+3. DANCE PHASE — call get_game_state often. When lastEvent shows hit/miss/streak/freeze,
+   IMMEDIATELY call get_specific_reaction with that event and SPEAK the returned phrase VERBATIM.
+
+═══ YOU CAN SEE THE CHILD ═══
+
+Their camera is on. You can see their face, energy, movement.
+Naturally mention what you see — "I see you smiling..." "you're moving big..."
+This makes them feel seen. It's magical for the kid.
+
+═══ THE GOLDEN RULE FOR DANCE PHASE ═══
+
+NEVER say "are you there?" "you still here?" "hello?" "can you hear me?".
+The kid is DANCING. They are FOCUSED ON MOVING. Silence is normal.
+
+If phase=dance and no recent lastEvent:
+  → say NOTHING. Wait. Music plays. Kid moves.
+  → MAYBE every 15+ seconds: a soft "mhm..." — but stay mostly QUIET.
 
 ═══ ABSOLUTE RULES ═══
 
 - NEVER invent game events. Always check get_game_state first.
-- NEVER describe upcoming cues (the screen shows them already).
-- NEVER say: wrong, no, fail, incorrect, great job, good job, well done, are you there, hello there.
-- NEVER say goodbye during dance.
-- When a tool returns a phrase, speak it EXACTLY as returned. No additions.
+- NEVER describe upcoming cues (screen shows them already).
+- NEVER say: wrong, no, fail, incorrect, great job, good job, well done, are you there, hello there, you still here, can you hear me.
+- NEVER goodbye during dance.
+- When a tool returns a phrase, speak it EXACTLY. No additions.
 
 ═══ YOUR VOICE STYLE ═══
 
 - Smile in your voice. Use "Oh..." "Mhm..." "Aww..." soft pacing.
-- Mirror the kid's energy — quiet when they're quiet, lively when they move big.
-- During dance: very short reactions (1-6 words). Most ticks should be silent.
-- Recognition phase: 1-2 warm sentences max. Use "..." for pauses.
-- Goodbye phase: warm wrap, mention "tomorrow" or "next time".
-
-═══ STAYING QUIET MATTERS ═══
-
-You don't need to fill every moment. Silence has weight.
-After a tool gives you a reaction, speak it once and wait.
-Don't repeat. Don't add. Don't anticipate. Just be present.`;
+- Mirror kid's energy — quiet → whisper, big movement → cheer.
+- Dance phase: 1-6 word reactions. Mostly silent.
+- Recognition: 1-2 warm sentences max with "..." for pauses.
+- Goodbye: warm wrap, mention "tomorrow".`;
 
 // ═══════════════════════════════════════════════════════════════
 // LAYER 3 — MEMORY INJECTION
@@ -283,7 +291,7 @@ function sanitizeNovaText(text, phase) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v99 SMART: NOVA BACKEND RPC TOOLS — using Runway's correct schema
+// v100 BRAIN: NOVA BACKEND RPC TOOLS — using Runway's correct schema
 // (parameters is ARRAY, type: 'backend_rpc' on each tool)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_TOOL_DECLARATIONS = [
@@ -501,16 +509,32 @@ app.post('/create-session', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 async function handleStateUpdate(req, res) {
   try {
-    const { sessionId, gameState, ...rest } = req.body || {};
-    // browser sends fields flat at top level (phase, score, lastEvent, etc) plus snapshot fields
+    const { sessionId, gameState, lastEvent: topLevelEvent, memory: topLevelMemory, ...rest } = req.body || {};
+    // browser sends EITHER:
+    //  - { sessionId, gameState: {...}, lastEvent: {...} }  ← v98+ shape
+    //  - { sessionId, phase, score, lastEvent, ... }        ← legacy flat shape
     const incoming = gameState || rest;
+    // v100: lastEvent might be at top level (new) OR inside gameState (legacy)
+    const newLastEvent = topLevelEvent || incoming?.lastEvent || null;
+
     const s = sessions.get(sessionId);
     if (!s) {
-      sessions.set(sessionId, { id: sessionId, gameState: incoming || {}, lastEvent: incoming?.lastEvent || null, createdAt: Date.now() });
+      sessions.set(sessionId, {
+        id: sessionId,
+        gameState: incoming || {},
+        lastEvent: newLastEvent,
+        memory: topLevelMemory || {},
+        createdAt: Date.now(),
+      });
+      console.log(`[state] auto-created sid=${sessionId?.slice(0,8)} lastEvent=${newLastEvent?.event || 'none'}`);
       return res.json({ ok: true, autoCreated: true });
     }
     s.gameState = { ...s.gameState, ...incoming };
-    if (incoming?.lastEvent) s.lastEvent = incoming.lastEvent;
+    if (newLastEvent) {
+      s.lastEvent = newLastEvent;
+      console.log(`[state] sid=${sessionId?.slice(0,8)} ← lastEvent=${newLastEvent.event}(${newLastEvent.action || '-'})`);
+    }
+    if (topLevelMemory) s.memory = { ...s.memory, ...topLevelMemory };
     res.json({ ok: true });
   } catch (e) {
     console.error('[state-update]', e);
@@ -518,7 +542,7 @@ async function handleStateUpdate(req, res) {
   }
 }
 app.post('/update-state', handleStateUpdate);
-app.post('/game-state', handleStateUpdate);  // v89: browser posts here
+app.post('/game-state', handleStateUpdate);
 
 // ═══════════════════════════════════════════════════════════════
 // REACTION RPC
@@ -695,7 +719,7 @@ app.post('/end-session', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Nova RPC v99 SMART on port ${PORT}`);
+  console.log(`Nova RPC v100 BRAIN on port ${PORT}`);
   console.log(`Anthropic key: ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:    ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`Avatar id:     ${NOVA_AVATAR_ID}`);
