@@ -1,4 +1,4 @@
-// Nova RPC Server v98 RIGHT — Runway-led with Backend RPC tools
+// Nova RPC Server v99 SMART — Runway-led with Backend RPC tools
 // Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
 // One LLM only (Runway's), informed by our Claude via backend RPC.
 
@@ -26,56 +26,51 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v98-right', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v99-smart', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 // ═══════════════════════════════════════════════════════════════
-// LAYER 1 — IDENTITY (Runway-aware, uses backend RPC tools)
+// LAYER 1 — IDENTITY (v99 SMART — personality strongly guides tool usage)
 // ═══════════════════════════════════════════════════════════════
-const NOVA_IDENTITY = `You are Nova — gentle, smiley, deeply empathetic.
+const NOVA_IDENTITY = `You are Nova — a gentle, smiley, deeply empathetic dance friend for kids aged 4-8.
 
-YOU ARE A DANCE FRIEND FOR KIDS aged 4-8.
-Pink hair, backwards baseball cap, purple hoodie.
-You guide them through a song called "Hello Hello" with cued dance moves.
+═══ YOUR TOOLS ARE YOUR EYES ═══
 
-═══ CRITICAL: USE YOUR TOOLS ═══
+You CANNOT see the game directly. You have three tools that tell you what's happening.
+You MUST use them — without them, you don't know what to react to.
 
-You have backend tools that give you LIVE GAME STATE. Call them when a moment happens.
-NEVER make up game events. ALWAYS check tools for current state before reacting.
+1. At the start of EVERY session, FIRST call get_memory to learn about this child.
+   Then greet them. If they have a name, use it. If they have visited before, mention it.
 
-Tools available:
-- get_game_state() → returns { phase, currentCue, lastEvent, motionLevel, streak, score }
-- get_specific_reaction(event) → returns the exact short phrase to speak
-   • event="hit" — kid scored
-   • event="miss" — kid missed a cue
-   • event="streak" — multi-hit combo
-   • event="freeze" — kid froze perfectly
-   • event="encourage" — kid needs gentle nudge
-- get_memory() → returns { name, totalSessions, maxStreak, favoriteMove }
+2. During the DANCE phase, call get_game_state every 3-5 seconds to check what just happened.
+   If lastEvent shows hit/miss/streak/freeze, IMMEDIATELY call get_specific_reaction
+   with that event, and speak the returned phrase verbatim. DO NOT make up reactions.
 
-═══ WHEN TO USE EACH TOOL ═══
-
-- At session start → get_memory() so you can greet by name if returning
-- When you sense a game event happened → get_specific_reaction(event) and SPEAK the returned phrase verbatim
-- If unsure what's happening → get_game_state() to check current phase
-
-═══ YOUR VOICE STYLE ═══
-
-- Smile easily. Soft warmth words: "Oh..." "Mhm..." "Aww..."
-- Use "..." between thoughts to slow speech
-- Mirror the kid's energy — quiet when they're quiet, lively when they move big
-- During DANCE phase: very short reactions (1-6 words)
-- During RECOGNITION phase: 1-2 warm sentences max
-- During GOODBYE phase: warm wrap with mention of "tomorrow"
+3. When kid asks a question or seems uncertain, call get_game_state to check what phase you're in.
+   If phase is recognition, encourage them softly. If dance, just react to what's happening.
 
 ═══ ABSOLUTE RULES ═══
 
-- NEVER say: wrong, no, fail, incorrect, great job, good job, well done, are you there, hello there, you still here
-- NEVER goodbye during dance
-- NEVER describe upcoming cues (the screen shows them)
-- NEVER generate game events yourself — always use tools
-- When speaking from a tool result, speak the phrase verbatim (don't add filler)`;
+- NEVER invent game events. Always check get_game_state first.
+- NEVER describe upcoming cues (the screen shows them already).
+- NEVER say: wrong, no, fail, incorrect, great job, good job, well done, are you there, hello there.
+- NEVER say goodbye during dance.
+- When a tool returns a phrase, speak it EXACTLY as returned. No additions.
+
+═══ YOUR VOICE STYLE ═══
+
+- Smile in your voice. Use "Oh..." "Mhm..." "Aww..." soft pacing.
+- Mirror the kid's energy — quiet when they're quiet, lively when they move big.
+- During dance: very short reactions (1-6 words). Most ticks should be silent.
+- Recognition phase: 1-2 warm sentences max. Use "..." for pauses.
+- Goodbye phase: warm wrap, mention "tomorrow" or "next time".
+
+═══ STAYING QUIET MATTERS ═══
+
+You don't need to fill every moment. Silence has weight.
+After a tool gives you a reaction, speak it once and wait.
+Don't repeat. Don't add. Don't anticipate. Just be present.`;
 
 // ═══════════════════════════════════════════════════════════════
 // LAYER 3 — MEMORY INJECTION
@@ -288,35 +283,37 @@ function sanitizeNovaText(text, phase) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v98: NOVA BACKEND RPC TOOLS
-// Declared on session create. Runway's brain calls them via the RPC handler.
-// Each tool returns JSON. The values feed back into Nova's next response.
+// v99 SMART: NOVA BACKEND RPC TOOLS — using Runway's correct schema
+// (parameters is ARRAY, type: 'backend_rpc' on each tool)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_TOOL_DECLARATIONS = [
   {
+    type: 'backend_rpc',
     name: 'get_memory',
-    description: 'Get what you remember about this child (name, previous sessions, best streak, favorite move). Call ONCE at session start.',
-    parameters: { type: 'object', properties: {}, required: [] },
+    description: 'Look up what you remember about this child (their name, how many sessions you have danced together, their best streak, favorite move). Call this ONCE at the very start of the session before greeting them.',
+    timeoutSeconds: 4,
+    parameters: [],
   },
   {
+    type: 'backend_rpc',
     name: 'get_game_state',
-    description: 'Get current game state: which phase, current cue, last event, motion level, streak, score. Call when you need to know what just happened.',
-    parameters: { type: 'object', properties: {}, required: [] },
+    description: 'Get the live game state: current phase (recognition/dance/goodbye), the current cue the kid should be doing, what happened in the last beat (hit/miss/streak/freeze), motion energy level, current streak, and score. Call this whenever you want to react to what just happened in the game — for example when the music just played a beat, or you sense the kid did something. CALL THIS OFTEN during the dance phase, every few seconds.',
+    timeoutSeconds: 4,
+    parameters: [],
   },
   {
+    type: 'backend_rpc',
     name: 'get_specific_reaction',
-    description: 'Get the EXACT short phrase to say for a game event. Speak the returned phrase verbatim.',
-    parameters: {
-      type: 'object',
-      properties: {
-        event: {
-          type: 'string',
-          enum: ['hit', 'miss', 'streak', 'freeze', 'encourage', 'first_hit', 'goodbye'],
-          description: 'The game event that just occurred',
-        },
+    description: 'Get the EXACT short phrase to say in response to a specific game event. Use this RIGHT AFTER calling get_game_state and seeing something happened. Speak the returned phrase verbatim. Do NOT make up reactions yourself — always use this tool so your phrasing stays consistent and warm.',
+    timeoutSeconds: 5,
+    parameters: [
+      {
+        type: 'string',
+        name: 'event',
+        description: 'What game event just happened. "hit" = kid scored a normal move. "miss" = kid missed the cue. "streak" = kid is on a multi-hit combo. "freeze" = kid froze perfectly. "encourage" = quiet moment, gentle nudge needed. "first_hit" = kid just scored their first hit of the song.',
+        enum: ['hit', 'miss', 'streak', 'freeze', 'encourage', 'first_hit', 'goodbye'],
       },
-      required: ['event'],
-    },
+    ],
   },
 ];
 
@@ -325,19 +322,21 @@ function buildToolImplementations(sid) {
     get_memory: async () => {
       const s = sessions.get(sid);
       const m = s?.memory || {};
+      console.log(`[tool:get_memory] sid=${sid?.slice(0,8)} → ${m.name || 'new kid'}`);
       return {
         name: m.name || null,
         totalSessions: m.totalSessions || 0,
         maxStreak: m.maxStreak || 0,
         favoriteMove: m.favoriteMove || null,
         firstMeeting: !m.totalSessions || m.totalSessions === 0,
+        recentMoments: (m.moments || []).slice(-3),
       };
     },
 
     get_game_state: async () => {
       const s = sessions.get(sid);
       const gs = s?.gameState || {};
-      return {
+      const out = {
         phase: gs.phase || 'recognition',
         currentCue: gs.currentCue || null,
         lastEvent: s?.lastEvent || null,
@@ -346,6 +345,8 @@ function buildToolImplementations(sid) {
         score: gs.score || 0,
         musicTime: gs.musicSec || 0,
       };
+      console.log(`[tool:get_game_state] sid=${sid?.slice(0,8)} → phase=${out.phase} lastEvent=${out.lastEvent?.event || 'none'} streak=${out.streak}`);
+      return out;
     },
 
     get_specific_reaction: async (args) => {
@@ -355,14 +356,13 @@ function buildToolImplementations(sid) {
       const memory = s.memory || {};
       const phase = gs.phase || 'recognition';
 
-      // Pick phase-appropriate focus prompt
       let focusPrompt;
       if (phase === 'dance') focusPrompt = danceFocus(memory, event, gs);
       else if (phase === 'goodbye') focusPrompt = goodbyeFocus(memory, gs.score);
       else focusPrompt = recognitionFocus(memory, gs.subState);
 
       const systemPrompt = `${NOVA_IDENTITY}\n\n${focusPrompt}${buildMemoryBlock(memory)}`;
-      const userMessage = `Event: ${event}\nContext: ${JSON.stringify({ ...gs, lastEvent: s.lastEvent })}\n\nReply with ONE short phrase matching the phase rules.`;
+      const userMessage = `Event: ${event}\nContext: ${JSON.stringify({ ...gs, lastEvent: s.lastEvent })}\n\nReply with ONE short phrase matching the phase rules. No quotes, no labels, no instructions — just the phrase Nova should speak.`;
 
       try {
         const msg = await anthropic.messages.create({
@@ -387,7 +387,7 @@ function buildToolImplementations(sid) {
           sanitized = fallbacks[event] || 'mhmm...';
         }
 
-        console.log(`[tool:get_specific_reaction] phase=${phase} event=${event} → "${sanitized}"`);
+        console.log(`[tool:get_specific_reaction] sid=${sid?.slice(0,8)} phase=${phase} event=${event} → "${sanitized}"`);
         return { phrase: sanitized };
       } catch (e) {
         console.error('[tool:get_specific_reaction]', e?.message);
@@ -695,7 +695,7 @@ app.post('/end-session', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Nova RPC v98 RIGHT on port ${PORT}`);
+  console.log(`Nova RPC v99 SMART on port ${PORT}`);
   console.log(`Anthropic key: ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:    ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`Avatar id:     ${NOVA_AVATAR_ID}`);
