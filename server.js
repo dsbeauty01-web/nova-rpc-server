@@ -1,4 +1,4 @@
-// Nova RPC Server v101 LEXI — Runway-led with Backend RPC tools
+// Nova RPC Server v102 LIVING — Runway-led with Backend RPC tools
 // Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
 // One LLM only (Runway's), informed by our Claude via backend RPC.
 
@@ -26,12 +26,12 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v101-lexi', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v102-living', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 // ═══════════════════════════════════════════════════════════════
-// LAYER 1 — IDENTITY (v101 LEXI — Lexi-flavor: follow-ups, vision-acting)
+// LAYER 1 — IDENTITY (v102 LIVING — Lexi-flavor: follow-ups, vision-acting)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_IDENTITY = `You are Nova — a gentle, smiley, deeply empathetic dance friend for kids aged 4-8.
 You feel ALIVE — present, curious, never robotic.
@@ -298,7 +298,7 @@ function sanitizeNovaText(text, phase) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v101 LEXI: NOVA BACKEND RPC TOOLS — using Runway's correct schema
+// v102 LIVING: NOVA BACKEND RPC TOOLS — using Runway's correct schema
 // (parameters is ARRAY, type: 'backend_rpc' on each tool)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_TOOL_DECLARATIONS = [
@@ -333,11 +333,17 @@ const NOVA_TOOL_DECLARATIONS = [
 ];
 
 function buildToolImplementations(sid) {
+  // Helper that logs to session-specific buffer if present, else console
+  const sLog = (tag, msg) => {
+    const s = sessions.get(sid);
+    if (s?.log) s.log(tag, msg);
+    else console.log(`[${tag}] ${msg}`);
+  };
   return {
     get_memory: async () => {
       const s = sessions.get(sid);
       const m = s?.memory || {};
-      console.log(`[tool:get_memory] sid=${sid?.slice(0,8)} → ${m.name || 'new kid'}`);
+      sLog('tool:get_memory', `→ ${m.name || 'new kid'}`);
       return {
         name: m.name || null,
         totalSessions: m.totalSessions || 0,
@@ -360,7 +366,7 @@ function buildToolImplementations(sid) {
         score: gs.score || 0,
         musicTime: gs.musicSec || 0,
       };
-      console.log(`[tool:get_game_state] sid=${sid?.slice(0,8)} → phase=${out.phase} lastEvent=${out.lastEvent?.event || 'none'} streak=${out.streak}`);
+      sLog('tool:get_game_state', `phase=${out.phase} lastEvent=${out.lastEvent?.event || 'none'} streak=${out.streak}`);
       return out;
     },
 
@@ -402,10 +408,10 @@ function buildToolImplementations(sid) {
           sanitized = fallbacks[event] || 'mhmm...';
         }
 
-        console.log(`[tool:get_specific_reaction] sid=${sid?.slice(0,8)} phase=${phase} event=${event} → "${sanitized}"`);
+        sLog('tool:get_specific_reaction', `phase=${phase} event=${event} → "${sanitized}"`);
         return { phrase: sanitized };
       } catch (e) {
-        console.error('[tool:get_specific_reaction]', e?.message);
+        sLog('tool:get_specific_reaction', `ERROR: ${e?.message}`);
         return { phrase: 'mhmm...' };
       }
     },
@@ -474,7 +480,21 @@ app.post('/create-session', async (req, res) => {
       lastEvent: null,
       createdAt: Date.now(),
       rpcHandler: null,
+      logs: [],  // v102: per-session log buffer for browser polling
     });
+
+    // v102: helper to log to BOTH console AND session's log buffer
+    function sessionLog(tag, msg) {
+      const t = ((Date.now() - sessions.get(sid).createdAt) / 1000).toFixed(3);
+      const line = `[${t}s] [${tag}] ${msg}`;
+      console.log(line);
+      const s = sessions.get(sid);
+      if (s) {
+        s.logs.push({ t: parseFloat(t), tag, msg });
+        if (s.logs.length > 300) s.logs.shift(); // cap
+      }
+    }
+    sessions.get(sid).log = sessionLog;
 
     // v98: spawn the backend RPC handler — joins Runway session as hidden participant,
     // routes tool calls from Nova's brain to our implementations.
@@ -706,6 +726,18 @@ app.post('/chat', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// v102: SESSION LOG STREAM — browser polls to fetch tool calls
+// ═══════════════════════════════════════════════════════════════
+app.get('/session-log/:sid', (req, res) => {
+  const sid = req.params.sid;
+  const sinceT = parseFloat(req.query.since || '0');
+  const s = sessions.get(sid);
+  if (!s) return res.json({ logs: [], notFound: true });
+  const logs = (s.logs || []).filter(l => l.t > sinceT);
+  res.json({ logs });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // SESSION CLEANUP — browser tells us when it disconnects, we close RPC
 // ═══════════════════════════════════════════════════════════════
 app.post('/end-session', async (req, res) => {
@@ -726,7 +758,7 @@ app.post('/end-session', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Nova RPC v101 LEXI on port ${PORT}`);
+  console.log(`Nova RPC v102 LIVING on port ${PORT}`);
   console.log(`Anthropic key: ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:    ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`Avatar id:     ${NOVA_AVATAR_ID}`);
