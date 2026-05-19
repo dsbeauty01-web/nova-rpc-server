@@ -1,4 +1,4 @@
-// Nova RPC Server v102 LIVING — Runway-led with Backend RPC tools
+// Nova RPC Server v104 TYPE — Runway-led with Backend RPC tools
 // Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
 // One LLM only (Runway's), informed by our Claude via backend RPC.
 
@@ -26,12 +26,73 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v102-living', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v104-type', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 // ═══════════════════════════════════════════════════════════════
-// LAYER 1 — IDENTITY (v102 LIVING — Lexi-flavor: follow-ups, vision-acting)
+// v104 TTS-FOR-MIC — kid typed text, we generate speech to inject into mic
+// Uses ElevenLabs (fast: ~300ms via turbo model, natural voice for kid input)
+// Returns MP3 binary that browser decodes + routes into Runway's mic stream
+// ═══════════════════════════════════════════════════════════════
+app.post('/tts-for-mic', async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const { text, sessionId } = req.body || {};
+    if (!text || text.length < 1) return res.status(400).json({ error: 'no text' });
+    if (text.length > 300) return res.status(400).json({ error: 'text too long (max 300 chars)' });
+    if (!process.env.ELEVENLABS_API_KEY) {
+      return res.status(500).json({ error: 'ELEVENLABS_API_KEY not configured' });
+    }
+
+    // Use a child-friendly voice — Rachel (default), but kid-like would be better
+    // Voice IDs from ElevenLabs: 21m00Tcm4TlvDq8ikWAM = Rachel (warm, natural)
+    // For a kid voice: pPdl9cQBQq4p6mRkZy2Z (Cassidy/Anna - young female)
+    const VOICE_ID = process.env.ELEVENLABS_KID_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+
+    const elResp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream?optimize_streaming_latency=4&output_format=mp3_22050_32`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': process.env.ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg',
+      },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_turbo_v2_5',  // fastest, decent quality
+        voice_settings: {
+          stability: 0.4,
+          similarity_boost: 0.6,
+          style: 0.2,
+          use_speaker_boost: true,
+        },
+      }),
+    });
+
+    if (!elResp.ok) {
+      const errText = await elResp.text();
+      console.error('[tts-for-mic] ElevenLabs error', elResp.status, errText);
+      return res.status(502).json({ error: 'ElevenLabs failed: ' + elResp.status });
+    }
+
+    // Stream MP3 back to browser
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    const ab = await elResp.arrayBuffer();
+    const ms = Date.now() - t0;
+    console.log(`[tts-for-mic] sid=${sessionId?.slice(0,8)} text="${text.slice(0,40)}" (${ms}ms, ${ab.byteLength} bytes)`);
+    // Also log to session buffer so it appears in browser merged log
+    const s = sessions.get(sessionId);
+    if (s?.log) s.log('typed-input', `kid typed: "${text}" → TTS ready (${ms}ms)`);
+    res.send(Buffer.from(ab));
+  } catch (e) {
+    console.error('[tts-for-mic]', e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// LAYER 1 — IDENTITY (v104 TYPE — Lexi-flavor: follow-ups, vision-acting)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_IDENTITY = `You are Nova — a gentle, smiley, deeply empathetic dance friend for kids aged 4-8.
 You feel ALIVE — present, curious, never robotic.
@@ -298,7 +359,7 @@ function sanitizeNovaText(text, phase) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v102 LIVING: NOVA BACKEND RPC TOOLS — using Runway's correct schema
+// v104 TYPE: NOVA BACKEND RPC TOOLS — using Runway's correct schema
 // (parameters is ARRAY, type: 'backend_rpc' on each tool)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_TOOL_DECLARATIONS = [
@@ -758,7 +819,7 @@ app.post('/end-session', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Nova RPC v102 LIVING on port ${PORT}`);
+  console.log(`Nova RPC v104 TYPE on port ${PORT}`);
   console.log(`Anthropic key: ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:    ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`Avatar id:     ${NOVA_AVATAR_ID}`);
