@@ -1,4 +1,4 @@
-// Nova RPC Server v104 TYPE — Runway-led with Backend RPC tools
+// Nova RPC Server v105 ALIVE — Runway-led with Backend RPC tools
 // Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
 // One LLM only (Runway's), informed by our Claude via backend RPC.
 
@@ -26,7 +26,7 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v104-type', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v105-alive', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -92,7 +92,7 @@ app.post('/tts-for-mic', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// LAYER 1 — IDENTITY (v104 TYPE — Lexi-flavor: follow-ups, vision-acting)
+// LAYER 1 — IDENTITY (v105 ALIVE — Lexi-flavor: follow-ups, vision-acting)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_IDENTITY = `You are Nova — a gentle, smiley, deeply empathetic dance friend for kids aged 4-8.
 You feel ALIVE — present, curious, never robotic.
@@ -359,7 +359,7 @@ function sanitizeNovaText(text, phase) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v104 TYPE: NOVA BACKEND RPC TOOLS — using Runway's correct schema
+// v105 ALIVE: NOVA BACKEND RPC TOOLS — using Runway's correct schema
 // (parameters is ARRAY, type: 'backend_rpc' on each tool)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_TOOL_DECLARATIONS = [
@@ -817,10 +817,121 @@ app.post('/end-session', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// v105 ALIVE — PRE-CACHED FILLERS for layered presence
+// On startup, generate ~10 short ElevenLabs clips. Browser plays one
+// at ~300ms while Runway's full reply is still being prepared.
+// This is the "feels alive" trick borrowed from Lexi/Loora.
+// ═══════════════════════════════════════════════════════════════
+const FILLER_PHRASES = [
+  'Mhm...',
+  'Oh!',
+  'Yes friend...',
+  'Hmm...',
+  'Ooh...',
+  'Aw...',
+  'Yeah?',
+  'Mmm yeah...',
+  'I see...',
+  'Yes...',
+];
+const fillerCache = new Map(); // key: index → { mp3Buffer, generatedAt }
+
+async function generateFiller(text, voiceId) {
+  if (!process.env.ELEVENLABS_API_KEY) return null;
+  const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?optimize_streaming_latency=4&output_format=mp3_22050_32`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': process.env.ELEVENLABS_API_KEY,
+      'Content-Type': 'application/json',
+      'Accept': 'audio/mpeg',
+    },
+    body: JSON.stringify({
+      text,
+      model_id: 'eleven_turbo_v2_5',
+      voice_settings: { stability: 0.55, similarity_boost: 0.7, style: 0.4, use_speaker_boost: true },
+    }),
+  });
+  if (!resp.ok) {
+    console.error(`[filler-gen] FAILED "${text}":`, resp.status);
+    return null;
+  }
+  const ab = await resp.arrayBuffer();
+  return Buffer.from(ab);
+}
+
+async function preGenerateFillers() {
+  if (!process.env.ELEVENLABS_API_KEY) {
+    console.log('[filler-gen] no ELEVENLABS_API_KEY — fillers disabled');
+    return;
+  }
+  const voiceId = process.env.ELEVENLABS_KID_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+  console.log(`[filler-gen] generating ${FILLER_PHRASES.length} fillers...`);
+  const t0 = Date.now();
+  let ok = 0;
+  for (let i = 0; i < FILLER_PHRASES.length; i++) {
+    try {
+      const buf = await generateFiller(FILLER_PHRASES[i], voiceId);
+      if (buf) {
+        fillerCache.set(i, { buf, text: FILLER_PHRASES[i], generatedAt: Date.now() });
+        ok++;
+      }
+    } catch (e) {
+      console.error('[filler-gen] error', FILLER_PHRASES[i], e?.message);
+    }
+  }
+  console.log(`[filler-gen] cached ${ok}/${FILLER_PHRASES.length} fillers in ${Date.now() - t0}ms`);
+}
+
+// Serve a random cached filler (or specific index)
+app.get('/filler', (req, res) => {
+  if (fillerCache.size === 0) return res.status(404).json({ error: 'no fillers cached yet' });
+  const keys = Array.from(fillerCache.keys());
+  const pick = keys[Math.floor(Math.random() * keys.length)];
+  const cached = fillerCache.get(pick);
+  res.setHeader('Content-Type', 'audio/mpeg');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader('X-Filler-Text', cached.text);
+  res.send(cached.buf);
+});
+
+// Get the text of available fillers (for debugging)
+app.get('/fillers-info', (req, res) => {
+  res.json({
+    cached: fillerCache.size,
+    total: FILLER_PHRASES.length,
+    phrases: Array.from(fillerCache.values()).map(f => f.text),
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// v105 — Fetch transcript from Runway after session ends
+// ═══════════════════════════════════════════════════════════════
+app.get('/transcript/:sid', async (req, res) => {
+  try {
+    const sid = req.params.sid;
+    if (!process.env.RUNWAYML_API_SECRET) return res.status(500).json({ error: 'no runway key' });
+    const r = await fetch(`https://api.dev.runwayml.com/v1/avatars/${NOVA_AVATAR_ID}/conversations/${sid}`, {
+      headers: {
+        'Authorization': 'Bearer ' + process.env.RUNWAYML_API_SECRET,
+        'X-Runway-Version': '2024-11-06',
+      },
+    });
+    if (!r.ok) return res.status(r.status).json({ error: await r.text() });
+    const data = await r.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message) });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Nova RPC v104 TYPE on port ${PORT}`);
-  console.log(`Anthropic key: ${!!process.env.ANTHROPIC_API_KEY}`);
-  console.log(`Runway key:    ${!!process.env.RUNWAYML_API_SECRET}`);
-  console.log(`Avatar id:     ${NOVA_AVATAR_ID}`);
+app.listen(PORT, async () => {
+  console.log(`Nova RPC v105 ALIVE on port ${PORT}`);
+  console.log(`Anthropic key:  ${!!process.env.ANTHROPIC_API_KEY}`);
+  console.log(`Runway key:     ${!!process.env.RUNWAYML_API_SECRET}`);
+  console.log(`ElevenLabs key: ${!!process.env.ELEVENLABS_API_KEY}`);
+  console.log(`Avatar id:      ${NOVA_AVATAR_ID}`);
+  // Pre-generate filler audio in background (don't block startup)
+  preGenerateFillers().catch(e => console.error('[filler-gen] startup failed:', e));
 });
