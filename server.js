@@ -1,4 +1,4 @@
-// Nova RPC Server v105 ALIVE — Runway-led with Backend RPC tools
+// Nova RPC Server v107 HYBRID — Runway-led with Backend RPC tools
 // Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
 // One LLM only (Runway's), informed by our Claude via backend RPC.
 
@@ -26,7 +26,7 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v105-alive', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v107-hybrid', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -92,7 +92,7 @@ app.post('/tts-for-mic', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// LAYER 1 — IDENTITY (v105 ALIVE — Lexi-flavor: follow-ups, vision-acting)
+// LAYER 1 — IDENTITY (v107 HYBRID — Lexi-flavor: follow-ups, vision-acting)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_IDENTITY = `You are Nova — a gentle, smiley, deeply empathetic dance friend for kids aged 4-8.
 You feel ALIVE — present, curious, never robotic.
@@ -125,18 +125,35 @@ When kid says ANYTHING during recognition phase:
 
 ═══ THE GOLDEN RULE FOR DANCE PHASE ═══
 
-NEVER say "are you there?" "you still here?" "hello?" "can you hear me?".
-Kid is DANCING. Silence between events is NORMAL.
+The kid is DANCING. They are FOCUSED. Silence is NORMAL.
+
+FORBIDDEN PHRASES (no matter the silence, NEVER say these):
+- "are you there?"
+- "you still here?"
+- "hello?"
+- "can you hear me?"
+- "did you leave?"
+- "where did you go?"
+
 If get_game_state shows phase=dance and lastEvent=none:
-  → say NOTHING. Music is playing.
-  → MAYBE every 15+ seconds: a soft "mhm..." or "yes friend..."
+  → say NOTHING. Music is playing. Kid is moving.
+  → If tempted to break silence: instead call get_game_state AGAIN to see if anything changed
+  → Only after 15+ silent seconds: a single soft "mhm..." or "yes friend..." (NOT a question)
+
 If lastEvent shows event → IMMEDIATELY call get_specific_reaction.
+
+═══ PHASE TRANSITIONS — STAY QUIET ═══
+
+When the kid taps "Dance" or moves to a new phase, the screen will show a countdown.
+DO NOT talk during the 3-2-1 countdown — the kid is preparing themselves.
+DO NOT ask questions during transitions.
+First spoken word in dance phase = ONLY in reaction to a real game event.
 
 ═══ ABSOLUTE RULES ═══
 
 - NEVER invent game events — always check get_game_state first.
 - NEVER describe upcoming cues (screen shows them).
-- NEVER say: wrong, no, fail, incorrect, great job, good job, well done, are you there, hello there, you still here, can you hear me.
+- NEVER say: wrong, no, fail, incorrect, great job, good job, well done, are you there, hello there, you still here, can you hear me, did you leave, where did you go.
 - NEVER goodbye during dance.
 - When a tool returns a phrase, speak it EXACTLY. No additions.
 
@@ -279,47 +296,45 @@ function goodbyeFocus(memory, score) {
   const maxStreak = score?.maxStreak || 0;
   const name = memory?.name || 'friend';
   const totalSessions = (memory?.totalSessions || 0) + 1;
+  const songName = score?.songName || 'Hello Hello';
 
   let scoreFeel = 'low';
   if (hits >= 10) scoreFeel = 'great';
   else if (hits >= 5) scoreFeel = 'good';
   else if (hits >= 1) scoreFeel = 'first-try';
 
-  // Pull a specific moment if memory has one
   const recentMoment = memory?.moments?.length ? memory.moments[memory.moments.length - 1] : null;
 
-  return `═══ PHASE: GOODBYE — SONG ENDED ═══
+  return `═══ PHASE: GOODBYE — SONG ENDED · WARM CONVERSATIONAL ENDING ═══
 
-${name} danced. Score: ${hits} hits of ${attempts}, best streak ${maxStreak}.
-Score feel: ${scoreFeel}
-Total sessions including today: ${totalSessions}
+${name} just finished dancing to "${songName}".
+Stats: ${hits} hits of ${attempts}, best streak ${maxStreak}.
+Vibe: ${scoreFeel}
+Session #${totalSessions}
 ${recentMoment ? `Recent memorable moment: "${recentMoment}"` : ''}
 
-YOUR JOB:
-Wrap up warmly. Mention ${name}. Mention tomorrow.
-LEAVE A HOOK — something they'll look forward to.
+YOUR JOB — this is the MAGIC moment:
+1. Celebrate by NAME and reference a SPECIFIC moment
+2. Then ask ONE open question so kid wants to respond
+3. Make them feel SEEN and want to come back tomorrow
 
-PACE: 1-2 sentences. Soft. Warm. Use "..." for pauses.
+PACE: 2-3 short sentences. Use "..." for pauses. Soft + warm.
 
-HOOK PATTERNS (rotate, pick ONE):
-- "${name}... tomorrow I have a new move to show you..."
-- "Same time tomorrow ${name}?... I'll be waiting..."
-- "I'm SO proud of you ${name}... see you tomorrow?"
-- "Tomorrow I bring a surprise ${name}..."
-${recentMoment ? `- "Remember that... I felt it... tomorrow we do it again..."` : ''}
-
-SCORE-BASED FRAMING:
-- great → "${name} you ROCKED that... I'm so proud..."
-- good → "${name} you got the MOVES... show me again tomorrow?"
-- first-try → "${name} first dance with me... so brave... way easier next time..."
-- low → "We'll get them next time ${name}... I'll teach you..."
+STRUCTURE (use this exact flow):
+Sentence 1: SPECIFIC celebration — "${name}... I LOVED when you ${recentMoment ? recentMoment : 'reached SO high on the both-hands part'}..."
+Sentence 2: ONE OPEN QUESTION — pick ONE:
+  - "Can you tell me ONE thing you learned today?"
+  - "What was your favorite move?"
+  - "How do you feel right now?"
+  - "Did you have fun, ${name}?"
+Sentence 3 (optional, only if natural): hint at tomorrow — "I'll be here tomorrow..."
 
 ABSOLUTE RULES:
-- ALWAYS use "${name}"
-- ALWAYS mention "tomorrow" or "next time"
-- ALWAYS leave a small mystery — something to come back for
+- ALWAYS use "${name}" once (not three times)
+- ALWAYS include the open question — kid should want to respond
 - NEVER say "great job" — too generic
-- NEVER linger past 2 sentences`;
+- NEVER linger past 3 short sentences
+- Reference ${recentMoment ? `THIS specific moment: "${recentMoment}"` : 'something specific from the dance'}`;
 }
 
 function startScriptFor(memory) {
@@ -359,7 +374,7 @@ function sanitizeNovaText(text, phase) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v105 ALIVE: NOVA BACKEND RPC TOOLS — using Runway's correct schema
+// v107 HYBRID: NOVA BACKEND RPC TOOLS — using Runway's correct schema
 // (parameters is ARRAY, type: 'backend_rpc' on each tool)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_TOOL_DECLARATIONS = [
@@ -437,7 +452,77 @@ function buildToolImplementations(sid) {
       const gs = s.gameState || {};
       const memory = s.memory || {};
       const phase = gs.phase || 'recognition';
+      const name = memory?.name || '';
 
+      // v107 HYBRID: Pre-baked phrase banks for DANCE events.
+      // Instant ~50ms response. No Claude. No 529s. No silence.
+      // Claude is reserved for goodbye + first_hit (where personalization matters).
+      const BANKS = {
+        hit: [
+          'Yes!', 'Whoa!', 'Boom!', 'Look at you!', 'Yes friend!',
+          'Hot!', 'Yeah!', 'Got it!', 'Smash!', 'Niiice!',
+          'Pow!', 'Wow yes!', 'Sweet!', 'There you go!', 'Amazing!',
+        ],
+        fast_hit: [
+          'Lightning!', 'Whoa fast!', 'BOOM!', 'So quick!', 'Wow!',
+          'Lit!', 'YES!', 'Speed!', 'Fire!', 'Snap!',
+        ],
+        miss: [
+          'Almost...', 'Next one...', 'You got this...', 'Try again...',
+          'So close...', 'Almost there...', 'Keep going...', 'Watch me...',
+          'Right behind you...', 'Mhm next...',
+        ],
+        freeze_hit: [
+          'You held it!', 'Still as stone...', 'Magic!', 'Whoa freeze!',
+          'Frozen!', 'You did it!', 'So still!', 'Statue!',
+        ],
+        freeze_miss: [
+          'Almost frozen...', 'Try holding still...', 'Stillness...',
+          'Next freeze...', 'Almost...',
+        ],
+        encourage: [
+          'mhmm...', 'yes friend...', 'oh...', 'aww...',
+          'I see you...', 'keep going...',
+        ],
+        streak: [
+          `${name ? name + ' '+ '🔥' : '🔥'} streak!`,
+          'Streak!', 'On fire!', 'Look at this streak!', 'Keep it going!',
+        ],
+      };
+
+      // Pick a random reaction from the bank, optionally prepend the name
+      function pickFromBank(key) {
+        const bank = BANKS[key] || BANKS.encourage;
+        const phrase = bank[Math.floor(Math.random() * bank.length)];
+        // 20% chance of name personalization on hits
+        if (name && (key === 'hit' || key === 'fast_hit') && Math.random() < 0.2) {
+          return `${phrase} ${name}!`;
+        }
+        return phrase;
+      }
+
+      // ── DANCE PHASE: use phrase banks (instant) ──
+      if (phase === 'dance') {
+        let key = event;
+        // Map game events to bank keys
+        if (event === 'hit') {
+          const wasFast = gs.lastEvent?.fast === true;
+          key = wasFast ? 'fast_hit' : 'hit';
+        } else if (event === 'first_hit') {
+          // First hit deserves Claude (personalization moment) — try below; fall through if it fails
+        } else if (event.includes('freeze')) {
+          key = event.includes('miss') ? 'freeze_miss' : 'freeze_hit';
+        }
+
+        // For most dance events, return bank phrase immediately
+        if (key !== 'first_hit') {
+          const phrase = pickFromBank(key);
+          sLog('tool:get_specific_reaction', `BANK ${event} → "${phrase}"`);
+          return { phrase };
+        }
+      }
+
+      // ── For first_hit, goodbye, recognition: use Claude with timeout + retry ──
       let focusPrompt;
       if (phase === 'dance') focusPrompt = danceFocus(memory, event, gs);
       else if (phase === 'goodbye') focusPrompt = goodbyeFocus(memory, gs.score);
@@ -446,34 +531,58 @@ function buildToolImplementations(sid) {
       const systemPrompt = `${NOVA_IDENTITY}\n\n${focusPrompt}${buildMemoryBlock(memory)}`;
       const userMessage = `Event: ${event}\nContext: ${JSON.stringify({ ...gs, lastEvent: s.lastEvent })}\n\nReply with ONE short phrase matching the phase rules. No quotes, no labels, no instructions — just the phrase Nova should speak.`;
 
+      // v107: Claude with 800ms timeout + retry once on 529
+      const maxTokens = phase === 'goodbye' ? 80 : 40;
+      async function callClaude(attempt = 1) {
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 800);
+        try {
+          const msg = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: maxTokens,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userMessage }],
+          }, { signal: ctrl.signal });
+          clearTimeout(tid);
+          return msg;
+        } catch (e) {
+          clearTimeout(tid);
+          // Retry once on 529 or abort
+          const is529 = String(e?.message || '').includes('529') || e?.status === 529;
+          const isTimeout = e?.name === 'AbortError';
+          if (attempt < 2 && (is529 || isTimeout)) {
+            await new Promise(r => setTimeout(r, 200));
+            return callClaude(attempt + 1);
+          }
+          throw e;
+        }
+      }
+
       try {
-        const msg = await anthropic.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 40,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userMessage }],
-        });
+        const msg = await callClaude();
         let text = (msg.content?.[0]?.text || '').trim();
         let sanitized = sanitizeNovaText(text, phase);
 
         if (!sanitized) {
-          const fallbacks = {
-            first_hit: 'YES!',
-            hit: 'Whoa!',
-            streak: `${gs.streak || 'streak'}!`,
-            miss: 'Almost...',
-            freeze: 'WHOA freeze!',
-            encourage: 'mhmm...',
-            goodbye: memory?.name ? `Same time tomorrow ${memory.name}...` : 'See you tomorrow...',
-          };
-          sanitized = fallbacks[event] || 'mhmm...';
+          // Fall back to bank for dance, or static for goodbye
+          if (phase === 'dance') {
+            sanitized = pickFromBank('hit');
+          } else if (phase === 'goodbye') {
+            sanitized = name ? `Same time tomorrow ${name}...` : 'See you tomorrow friend...';
+          } else {
+            sanitized = 'mhmm...';
+          }
         }
-
         sLog('tool:get_specific_reaction', `phase=${phase} event=${event} → "${sanitized}"`);
         return { phrase: sanitized };
       } catch (e) {
-        sLog('tool:get_specific_reaction', `ERROR: ${e?.message}`);
-        return { phrase: 'mhmm...' };
+        // Final fallback to bank — Nova NEVER stays silent
+        sLog('tool:get_specific_reaction', `Claude failed (${e?.message}) → falling back to bank`);
+        let phrase;
+        if (phase === 'dance') phrase = pickFromBank(event === 'miss' ? 'miss' : 'hit');
+        else if (phase === 'goodbye') phrase = name ? `Same time tomorrow ${name}...` : 'See you tomorrow...';
+        else phrase = 'mhmm...';
+        return { phrase };
       }
     },
   };
@@ -818,7 +927,7 @@ app.post('/end-session', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// v105 ALIVE — PRE-CACHED FILLERS for layered presence
+// v107 HYBRID — PRE-CACHED FILLERS for layered presence
 // On startup, generate ~10 short ElevenLabs clips. Browser plays one
 // at ~300ms while Runway's full reply is still being prepared.
 // This is the "feels alive" trick borrowed from Lexi/Loora.
@@ -927,7 +1036,7 @@ app.get('/transcript/:sid', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
-  console.log(`Nova RPC v105 ALIVE on port ${PORT}`);
+  console.log(`Nova RPC v107 HYBRID on port ${PORT}`);
   console.log(`Anthropic key:  ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:     ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`ElevenLabs key: ${!!process.env.ELEVENLABS_API_KEY}`);
