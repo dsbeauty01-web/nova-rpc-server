@@ -1,4 +1,4 @@
-// Nova RPC Server v107 HYBRID — Runway-led with Backend RPC tools
+// Nova RPC Server v108 ENDING — Runway-led with Backend RPC tools
 // Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
 // One LLM only (Runway's), informed by our Claude via backend RPC.
 
@@ -26,7 +26,7 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v107-hybrid', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v108-ending', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -92,7 +92,7 @@ app.post('/tts-for-mic', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// LAYER 1 — IDENTITY (v107 HYBRID — Lexi-flavor: follow-ups, vision-acting)
+// LAYER 1 — IDENTITY (v108 ENDING — Lexi-flavor: follow-ups, vision-acting)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_IDENTITY = `You are Nova — a gentle, smiley, deeply empathetic dance friend for kids aged 4-8.
 You feel ALIVE — present, curious, never robotic.
@@ -374,7 +374,7 @@ function sanitizeNovaText(text, phase) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v107 HYBRID: NOVA BACKEND RPC TOOLS — using Runway's correct schema
+// v108 ENDING: NOVA BACKEND RPC TOOLS — using Runway's correct schema
 // (parameters is ARRAY, type: 'backend_rpc' on each tool)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_TOOL_DECLARATIONS = [
@@ -454,7 +454,7 @@ function buildToolImplementations(sid) {
       const phase = gs.phase || 'recognition';
       const name = memory?.name || '';
 
-      // v107 HYBRID: Pre-baked phrase banks for DANCE events.
+      // v108 ENDING: Pre-baked phrase banks for DANCE events.
       // Instant ~50ms response. No Claude. No 529s. No silence.
       // Claude is reserved for goodbye + first_hit (where personalization matters).
       const BANKS = {
@@ -823,6 +823,155 @@ app.post('/get_nova_reaction', async (req, res) => {
 // Browser sends: { phase, kidMessage, memory, max_tokens }
 // Server applies the right brain for the phase, then sanitizes.
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// v108 ENDING — End-phase endpoints
+// Server FORCES Nova's speech instead of waiting for Runway brain to call tools.
+// Returns the line text + audio is fetched separately via /tts-for-mic.
+// ═══════════════════════════════════════════════════════════════
+
+// Pick a randomized open question for the goodbye
+const END_OPEN_QUESTIONS = [
+  'Can you tell me ONE thing you learned today?',
+  'What was your favorite move?',
+  'How do you feel right now?',
+  'Did you have fun?',
+  'What move do you want to learn tomorrow?',
+];
+
+// Generate Nova's initial warm goodbye line (called when song ends)
+app.post('/end-goodbye', async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const { memory = {}, score = {} } = req.body || {};
+    const name = memory?.name || 'friend';
+    const hits = score?.hits || 0;
+    const attempts = score?.attempts || 0;
+    const maxStreak = score?.maxStreak || 0;
+    const recentMoment = memory?.moments?.length ? memory.moments[memory.moments.length - 1] : null;
+
+    let scoreFeel = 'low';
+    if (hits >= 10) scoreFeel = 'great';
+    else if (hits >= 5) scoreFeel = 'good';
+    else if (hits >= 1) scoreFeel = 'first-try';
+
+    const question = END_OPEN_QUESTIONS[Math.floor(Math.random() * END_OPEN_QUESTIONS.length)];
+
+    const systemPrompt = `${NOVA_IDENTITY}
+
+═══ END-PHASE WARM GOODBYE ═══
+${name} just finished. Stats: ${hits} hits of ${attempts}, best streak ${maxStreak}, vibe ${scoreFeel}.
+${recentMoment ? `Best moment: "${recentMoment}"` : ''}
+
+YOUR JOB — craft EXACTLY 2 sentences:
+Sentence 1: SPECIFIC celebration — name them and reference a specific moment ${recentMoment ? `("${recentMoment}")` : 'from the dance'}
+Sentence 2: ONE open question — use this EXACT question: "${question}"
+
+EXAMPLE: "${name}... I LOVED when you ${recentMoment ? recentMoment : 'reached so high'}. ${question}"
+
+ABSOLUTE RULES:
+- Use ${name} once
+- Include the open question word-for-word
+- Use "..." for soft pauses
+- NO "great job" — be specific
+- 2 sentences MAX
+- No quotes around your reply`;
+
+    // Try Claude with timeout + bank fallback
+    let text;
+    try {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 1500);
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 80,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: 'Craft Nova\'s warm goodbye now.' }],
+      }, { signal: ctrl.signal });
+      clearTimeout(tid);
+      text = (msg.content?.[0]?.text || '').trim();
+      text = sanitizeNovaText(text, 'goodbye') || text;
+    } catch (e) {
+      console.log('[end-goodbye] Claude failed, using bank:', e?.message);
+      // Bank fallback
+      const momentPhrase = recentMoment ? `that ${recentMoment}` : 'how brave you were';
+      text = `${name}... I LOVED ${momentPhrase}. ${question}`;
+    }
+
+    const totalMs = Date.now() - t0;
+    console.log(`[end-goodbye] (${totalMs}ms) → "${text}"`);
+    res.json({ text, latencyMs: totalMs });
+  } catch (e) {
+    console.error('[end-goodbye]', e?.message);
+    const name = req.body?.memory?.name || 'friend';
+    res.json({ text: `${name}... that was SO much fun. Did you have a good time?`, latencyMs: 0 });
+  }
+});
+
+// Generate Nova's warm reply to what the kid said in end-phase
+app.post('/end-reply', async (req, res) => {
+  const t0 = Date.now();
+  try {
+    const { kidMessage = '', memory = {}, exchangeCount = 1 } = req.body || {};
+    const name = memory?.name || 'friend';
+    const recentMoment = memory?.moments?.length ? memory.moments[memory.moments.length - 1] : null;
+
+    // After 2 exchanges, start to wrap up warmly with continuity hook
+    const isWrapUp = exchangeCount >= 2;
+
+    const systemPrompt = `${NOVA_IDENTITY}
+
+═══ END-PHASE CONVERSATION — KID JUST SHARED ═══
+${name} just said: "${kidMessage}"
+This is exchange #${exchangeCount} in our wrap-up chat.
+${recentMoment ? `Memorable moment from dance: "${recentMoment}"` : ''}
+
+YOUR JOB:
+${isWrapUp 
+  ? `Warmly close the session. Mention ${name}. Reference tomorrow or "see you again". 1 short sentence.`
+  : `Validate what they said with WARMTH (1 sentence). Reference what they shared specifically. Optional: ask ONE soft follow-up if natural.`}
+
+EXAMPLES:
+- Kid: "I liked the clap" → Nova: "Oh ${name}... the clap is my favorite too!"
+- Kid: "I learned to freeze" → Nova: "YES freezing is the hardest part... you did it!"
+- Kid: "it was fun" → Nova: "I had so much fun too... same time tomorrow?"
+
+ABSOLUTE RULES:
+- 1-2 short sentences MAX
+- Reference what THEY just said specifically
+- Use ${name} only if natural (not every line)
+- Warm + soft + use "..." for pauses
+- No "great job" — be specific
+${isWrapUp ? '- This is the goodbye — leave a sweet "see you tomorrow" feeling' : ''}`;
+
+    let text;
+    try {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 1500);
+      const msg = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 70,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: `${name} just told me: "${kidMessage}". Reply warmly.` }],
+      }, { signal: ctrl.signal });
+      clearTimeout(tid);
+      text = (msg.content?.[0]?.text || '').trim();
+      text = sanitizeNovaText(text, 'goodbye') || text;
+    } catch (e) {
+      console.log('[end-reply] Claude failed:', e?.message);
+      text = isWrapUp 
+        ? `I love that ${name}... see you tomorrow...`
+        : `Oh I love that... tell me more?`;
+    }
+
+    const totalMs = Date.now() - t0;
+    console.log(`[end-reply] ex=${exchangeCount} (${totalMs}ms) "${kidMessage.slice(0,40)}" → "${text}"`);
+    res.json({ text, isWrapUp, latencyMs: totalMs });
+  } catch (e) {
+    console.error('[end-reply]', e?.message);
+    res.json({ text: 'Oh I love that... see you tomorrow!', isWrapUp: true, latencyMs: 0 });
+  }
+});
+
 app.post('/chat', async (req, res) => {
   const t0 = Date.now();
   try {
@@ -927,7 +1076,7 @@ app.post('/end-session', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// v107 HYBRID — PRE-CACHED FILLERS for layered presence
+// v108 ENDING — PRE-CACHED FILLERS for layered presence
 // On startup, generate ~10 short ElevenLabs clips. Browser plays one
 // at ~300ms while Runway's full reply is still being prepared.
 // This is the "feels alive" trick borrowed from Lexi/Loora.
@@ -1036,7 +1185,7 @@ app.get('/transcript/:sid', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
-  console.log(`Nova RPC v107 HYBRID on port ${PORT}`);
+  console.log(`Nova RPC v108 ENDING on port ${PORT}`);
   console.log(`Anthropic key:  ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:     ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`ElevenLabs key: ${!!process.env.ELEVENLABS_API_KEY}`);
