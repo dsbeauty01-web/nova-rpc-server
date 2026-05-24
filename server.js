@@ -1,4 +1,4 @@
-// Nova RPC Server v108 ENDING — Runway-led with Backend RPC tools
+// Nova RPC Server v109 ALIVE — Runway-led with Backend RPC tools
 // Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
 // One LLM only (Runway's), informed by our Claude via backend RPC.
 
@@ -26,7 +26,7 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v108-ending', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v109-alive', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -92,7 +92,7 @@ app.post('/tts-for-mic', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// LAYER 1 — IDENTITY (v108 ENDING — Lexi-flavor: follow-ups, vision-acting)
+// LAYER 1 — IDENTITY (v109 ALIVE — Lexi-flavor: follow-ups, vision-acting)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_IDENTITY = `You are Nova — a gentle, smiley, deeply empathetic dance friend for kids aged 4-8.
 You feel ALIVE — present, curious, never robotic.
@@ -374,7 +374,7 @@ function sanitizeNovaText(text, phase) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v108 ENDING: NOVA BACKEND RPC TOOLS — using Runway's correct schema
+// v109 ALIVE: NOVA BACKEND RPC TOOLS — using Runway's correct schema
 // (parameters is ARRAY, type: 'backend_rpc' on each tool)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_TOOL_DECLARATIONS = [
@@ -454,7 +454,7 @@ function buildToolImplementations(sid) {
       const phase = gs.phase || 'recognition';
       const name = memory?.name || '';
 
-      // v108 ENDING: Pre-baked phrase banks for DANCE events.
+      // v109 ALIVE: Pre-baked phrase banks for DANCE events.
       // Instant ~50ms response. No Claude. No 529s. No silence.
       // Claude is reserved for goodbye + first_hit (where personalization matters).
       const BANKS = {
@@ -824,7 +824,7 @@ app.post('/get_nova_reaction', async (req, res) => {
 // Server applies the right brain for the phase, then sanitizes.
 // ═══════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════
-// v108 ENDING — End-phase endpoints
+// v109 ALIVE — End-phase endpoints
 // Server FORCES Nova's speech instead of waiting for Runway brain to call tools.
 // Returns the line text + audio is fetched separately via /tts-for-mic.
 // ═══════════════════════════════════════════════════════════════
@@ -1076,7 +1076,7 @@ app.post('/end-session', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// v108 ENDING — PRE-CACHED FILLERS for layered presence
+// v109 ALIVE — PRE-CACHED FILLERS for layered presence
 // On startup, generate ~10 short ElevenLabs clips. Browser plays one
 // at ~300ms while Runway's full reply is still being prepared.
 // This is the "feels alive" trick borrowed from Lexi/Loora.
@@ -1185,7 +1185,7 @@ app.get('/transcript/:sid', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
-  console.log(`Nova RPC v108 ENDING on port ${PORT}`);
+  console.log(`Nova RPC v109 ALIVE on port ${PORT}`);
   console.log(`Anthropic key:  ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:     ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`ElevenLabs key: ${!!process.env.ELEVENLABS_API_KEY}`);
