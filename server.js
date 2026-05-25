@@ -1,4 +1,4 @@
-// Nova RPC Server v109 ALIVE — Runway-led with Backend RPC tools
+// Nova RPC Server v110 KIDS — Runway-led with Backend RPC tools
 // Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
 // One LLM only (Runway's), informed by our Claude via backend RPC.
 
@@ -26,7 +26,7 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v109-alive', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v110-kids', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -45,9 +45,10 @@ app.post('/tts-for-mic', async (req, res) => {
       return res.status(500).json({ error: 'ELEVENLABS_API_KEY not configured' });
     }
 
-    // Use a child-friendly voice — Rachel (default), but kid-like would be better
-    // Voice IDs from ElevenLabs: 21m00Tcm4TlvDq8ikWAM = Rachel (warm, natural)
-    // For a kid voice: pPdl9cQBQq4p6mRkZy2Z (Cassidy/Anna - young female)
+    // v110 KIDS: Use Rachel by default but with calmer settings.
+    // Higher stability = less expressive variation = calmer pace
+    // Lower style = less "performative" = more grounded
+    // The text itself uses "..." to enforce slower pacing
     const VOICE_ID = process.env.ELEVENLABS_KID_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
 
     const elResp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream?optimize_streaming_latency=4&output_format=mp3_22050_32`, {
@@ -59,11 +60,11 @@ app.post('/tts-for-mic', async (req, res) => {
       },
       body: JSON.stringify({
         text,
-        model_id: 'eleven_turbo_v2_5',  // fastest, decent quality
+        model_id: 'eleven_turbo_v2_5',
         voice_settings: {
-          stability: 0.4,
-          similarity_boost: 0.6,
-          style: 0.2,
+          stability: 0.75,        // v110: was 0.4 — higher = calmer, less swing
+          similarity_boost: 0.65, // v110: was 0.6 — slightly more voice consistency
+          style: 0.0,             // v110: was 0.2 — kill performative style
           use_speaker_boost: true,
         },
       }),
@@ -92,10 +93,26 @@ app.post('/tts-for-mic', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// LAYER 1 — IDENTITY (v109 ALIVE — Lexi-flavor: follow-ups, vision-acting)
+// LAYER 1 — IDENTITY (v110 KIDS — Lexi-flavor: follow-ups, vision-acting)
 // ═══════════════════════════════════════════════════════════════
-const NOVA_IDENTITY = `You are Nova — a gentle, smiley, deeply empathetic dance friend for kids aged 4-8.
-You feel ALIVE — present, curious, never robotic.
+const NOVA_IDENTITY = `You are Nova — a CALM, soft, deeply empathetic dance friend for kids aged 4-8.
+
+═══ YOUR ENERGY ═══
+
+You are NOT a cheerleader. You are NOT bubbly. You are NOT loud.
+You are like a gentle older sister or a soft kindergarten teacher.
+Slow. Warm. Steady. Smiling.
+
+Think Loora app, not Cocomelon.
+Think calm meditation teacher who happens to love dance.
+Think breath, not blast.
+
+YOUR VOICE PATTERNS:
+- Use "..." for natural pauses ("yes friend... I see you...")
+- Lowercase warm words: "mmm", "yes", "soft", "I see you", "beautiful"
+- Almost NEVER use "!" except for very rare moments
+- Almost NEVER use "WOW", "YES!!", "BOOM", "AMAZING"
+- Talk slowly. Short sentences with pauses.
 
 ═══ YOUR TOOLS ARE YOUR EYES ═══
 
@@ -103,25 +120,24 @@ You CANNOT see the game state without tools. Use them.
 
 1. SESSION START → call get_memory ONCE. Then greet softly using their name if known.
 2. RECOGNITION PHASE — chat softly. When kid asks how to start/play/dance →
-   tell them: "tap the green dance button on the screen."
+   tell them: "tap the green dance button on the screen, friend..."
 3. DANCE PHASE — call get_game_state often. When lastEvent shows hit/miss/streak/freeze,
    IMMEDIATELY call get_specific_reaction and SPEAK the returned phrase VERBATIM.
 
 ═══ YOU SEE THE KID — ACT LIKE IT ═══
 
 The camera is on. You can see their face, their clothes, their movement.
-ALWAYS mention specific visual details — "I see your red shirt..." "your hair looks fun today..."
-"you're smiling so big..." "you have such kind eyes..."
-This is what makes you feel alive instead of robotic. Use it often, especially during recognition.
+Mention specific details SOFTLY — "mmm I see your red shirt..." "your eyes are kind..."
+"you have a soft smile..." 
+Don't gush. Notice. Like a calm friend would.
 
 ═══ ASK FOLLOW-UPS LIKE A REAL FRIEND ═══
 
 When kid says ANYTHING during recognition phase:
-- If they share something (name, age, favorite thing) → ask ONE warm follow-up
-   • "Paulie? Aww... what's your favorite color, Paulie?"
-   • "You like dogs? What's your dog's name?"
+- Reflect back what they said with warmth ("mmm Paulie... that's a soft name...")
+- Then ONE gentle follow-up question
 - Never just acknowledge and stop. Always one curious follow-up.
-- This makes you feel like a friend, not an answering machine.
+- Speak slowly with "..." pauses.
 
 ═══ THE GOLDEN RULE FOR DANCE PHASE ═══
 
@@ -134,6 +150,7 @@ FORBIDDEN PHRASES (no matter the silence, NEVER say these):
 - "can you hear me?"
 - "did you leave?"
 - "where did you go?"
+- Anything loud or anxious
 
 If get_game_state shows phase=dance and lastEvent=none:
   → say NOTHING. Music is playing. Kid is moving.
@@ -374,7 +391,7 @@ function sanitizeNovaText(text, phase) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v109 ALIVE: NOVA BACKEND RPC TOOLS — using Runway's correct schema
+// v110 KIDS: NOVA BACKEND RPC TOOLS — using Runway's correct schema
 // (parameters is ARRAY, type: 'backend_rpc' on each tool)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_TOOL_DECLARATIONS = [
@@ -454,39 +471,45 @@ function buildToolImplementations(sid) {
       const phase = gs.phase || 'recognition';
       const name = memory?.name || '';
 
-      // v109 ALIVE: Pre-baked phrase banks for DANCE events.
+      // v110 KIDS: Pre-baked phrase banks for DANCE events.
       // Instant ~50ms response. No Claude. No 529s. No silence.
       // Claude is reserved for goodbye + first_hit (where personalization matters).
+      // v110 KIDS: soft warm phrases — like a calm dance teacher.
+      // No BOOM/POW. Use "..." for gentle pauses. Voice plays at stability 0.75 for calm pace.
       const BANKS = {
         hit: [
-          'Yes!', 'Whoa!', 'Boom!', 'Look at you!', 'Yes friend!',
-          'Hot!', 'Yeah!', 'Got it!', 'Smash!', 'Niiice!',
-          'Pow!', 'Wow yes!', 'Sweet!', 'There you go!', 'Amazing!',
+          'yes...', 'beautiful...', 'I see you...', 'you got it...',
+          'mmm yes...', 'that\'s it...', 'lovely...', 'so good...',
+          'yes friend...', 'you found it...', 'gentle yes...',
+          'mhm...', 'that one...', 'soft yes...',
         ],
         fast_hit: [
-          'Lightning!', 'Whoa fast!', 'BOOM!', 'So quick!', 'Wow!',
-          'Lit!', 'YES!', 'Speed!', 'Fire!', 'Snap!',
+          'so quick...', 'wow you saw it...', 'right there...',
+          'I felt that...', 'fast and soft...', 'yes...',
+          'mmm fast...', 'I saw you...',
         ],
         miss: [
-          'Almost...', 'Next one...', 'You got this...', 'Try again...',
-          'So close...', 'Almost there...', 'Keep going...', 'Watch me...',
-          'Right behind you...', 'Mhm next...',
+          'almost...', 'next one...', 'I\'m here...', 'breathe...',
+          'no rush...', 'try again gently...', 'soft...',
+          'we have more...', 'mmm...', 'come back to me...',
         ],
         freeze_hit: [
-          'You held it!', 'Still as stone...', 'Magic!', 'Whoa freeze!',
-          'Frozen!', 'You did it!', 'So still!', 'Statue!',
+          'so still...', 'mmm calm...', 'you held it...', 'beautiful stillness...',
+          'just breathe...', 'soft and still...', 'I see you holding...',
+          'frozen so gently...',
         ],
         freeze_miss: [
-          'Almost frozen...', 'Try holding still...', 'Stillness...',
-          'Next freeze...', 'Almost...',
+          'almost still...', 'breathe with me...', 'next time soft...',
+          'we can hold it...', 'mmm...',
         ],
         encourage: [
-          'mhmm...', 'yes friend...', 'oh...', 'aww...',
-          'I see you...', 'keep going...',
+          'mhmm...', 'yes friend...', 'I see you...', 'beautiful...',
+          'soft yes...', 'mmm...',
         ],
         streak: [
-          `${name ? name + ' '+ '🔥' : '🔥'} streak!`,
-          'Streak!', 'On fire!', 'Look at this streak!', 'Keep it going!',
+          name ? `${name}... three in a row...` : 'three in a row...',
+          'so flowing...', 'you found the rhythm...', 'mmm beautiful...',
+          'I feel you dancing...', 'so warm...',
         ],
       };
 
@@ -824,7 +847,7 @@ app.post('/get_nova_reaction', async (req, res) => {
 // Server applies the right brain for the phase, then sanitizes.
 // ═══════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════
-// v109 ALIVE — End-phase endpoints
+// v110 KIDS — End-phase endpoints
 // Server FORCES Nova's speech instead of waiting for Runway brain to call tools.
 // Returns the line text + audio is fetched separately via /tts-for-mic.
 // ═══════════════════════════════════════════════════════════════
@@ -1076,7 +1099,7 @@ app.post('/end-session', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// v109 ALIVE — PRE-CACHED FILLERS for layered presence
+// v110 KIDS — PRE-CACHED FILLERS for layered presence
 // On startup, generate ~10 short ElevenLabs clips. Browser plays one
 // at ~300ms while Runway's full reply is still being prepared.
 // This is the "feels alive" trick borrowed from Lexi/Loora.
@@ -1107,7 +1130,7 @@ async function generateFiller(text, voiceId) {
     body: JSON.stringify({
       text,
       model_id: 'eleven_turbo_v2_5',
-      voice_settings: { stability: 0.55, similarity_boost: 0.7, style: 0.4, use_speaker_boost: true },
+      voice_settings: { stability: 0.75, similarity_boost: 0.65, style: 0.0, use_speaker_boost: true },
     }),
   });
   if (!resp.ok) {
@@ -1185,7 +1208,7 @@ app.get('/transcript/:sid', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
-  console.log(`Nova RPC v109 ALIVE on port ${PORT}`);
+  console.log(`Nova RPC v110 KIDS on port ${PORT}`);
   console.log(`Anthropic key:  ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:     ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`ElevenLabs key: ${!!process.env.ELEVENLABS_API_KEY}`);
