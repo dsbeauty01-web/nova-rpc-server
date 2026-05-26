@@ -1,4 +1,4 @@
-// Nova RPC Server v110 KIDS — Runway-led with Backend RPC tools
+// Nova RPC Server v111-TEST — Nervous System + Anti-Mirror (intro phase) on top of v110-kids
 // Runway's brain calls our Claude-powered tools for fresh, specific phrasing.
 // One LLM only (Runway's), informed by our Claude via backend RPC.
 
@@ -26,7 +26,7 @@ const NOVA_AVATAR_ID = process.env.NOVA_AVATAR_ID || 'e976bbb2-de60-4da6-845e-4b
 const sessions = new Map();
 
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'nova-rpc-server', version: 'v110-kids', sessions: sessions.size });
+  res.json({ ok: true, service: 'nova-rpc-server', version: 'v111-test-nervous-system', sessions: sessions.size });
 });
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -258,7 +258,7 @@ async function observeKidFrame(frameDataUrl) {
             text: `You are Nova, a warm friendly dance teacher for a kid. Look at this webcam image and notice ONE delightful, specific visual detail to comment on warmly — like clothing, hair, room, smile, lighting, a toy, anything visible. Reply with ONLY what Nova would say out loud, 5-12 words, warm and excited. NO preamble. Example: "Oh! I love your yellow shirt! Did you pick it yourself?"`,
           },
         ],
-      }),
+      }],
     });
     
     const text = result.content?.[0]?.text?.trim() || '';
@@ -1454,7 +1454,7 @@ app.get('/transcript/:sid', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
-  console.log(`Nova RPC v110 KIDS on port ${PORT}`);
+  console.log(`Nova RPC v111-TEST (nervous system) on port ${PORT}`);
   console.log(`Anthropic key:  ${!!process.env.ANTHROPIC_API_KEY}`);
   console.log(`Runway key:     ${!!process.env.RUNWAYML_API_SECRET}`);
   console.log(`ElevenLabs key: ${!!process.env.ELEVENLABS_API_KEY}`);
