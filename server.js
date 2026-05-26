@@ -140,7 +140,9 @@ function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function ensureNerves(sid) {
   if (!novaNerves.has(sid)) {
     novaNerves.set(sid, {
-      lastSpokeAt: Date.now(),
+      // v111.1: pre-age lastSpokeAt by 1.5s so first micro fires within ~300ms
+      // of the first /perceive tick, killing the initial silent drift gap
+      lastSpokeAt: Date.now() - 1500,
       lastMicroAt: 0,
       lastObservation: null,
       kidSilentSince: Date.now(),
@@ -215,9 +217,9 @@ function decideNovaAction(sid, sensors) {
     };
   }
 
-  // RULE 6: Micro-tick — fire tiny vocalization if Nova quiet 2.5s+
-  // Keeps her face alive between real reactions
-  if (sinceSpoke > 2500 && sinceMicro > 2500) {
+  // RULE 6: Micro-tick — fire tiny vocalization if Nova quiet 1.8s+
+  // Keeps her face alive between real reactions (v111.1: tightened from 2.5s)
+  if (sinceSpoke > 1800 && sinceMicro > 1800) {
     // Pick tier based on kid energy
     let microTier = 'soft';
     if (sensors.motionLevel > 0.4 || sensors.smiling) microTier = 'warm';
