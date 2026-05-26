@@ -93,6 +93,249 @@ app.post('/tts-for-mic', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// v111 NERVOUS SYSTEM — INTRO PHASE ONLY (test mode)
+// Always-on perception + anti-mirror + micro-reactions
+// Runs ONLY during recognition phase. Dance phase keeps v110 logic.
+// ═══════════════════════════════════════════════════════════════
+
+// Per-session nervous state (intro only)
+const novaNerves = new Map();
+// shape: { lastSpokeAt, microTickInterval, lastMicroAt, lastObservation,
+//          kidSilentSince, kidEnergyHistory[], lastEnergyTier, observed:bool }
+
+// Micro-reactions: tiny vocalizations to keep face alive between real lines
+const MICRO_REACTIONS = {
+  soft:  ['mhm...', 'hm...', 'oh...', 'mm...', 'aw...'],
+  warm:  ['yes...', 'mhm yes...', 'oh nice...', 'aww...', 'ooh...'],
+  big:   ['oh wow!', 'whoa!', 'YES!', 'oh!!!', 'ooh!!!'],
+  curious: ['hm?', 'oh?', 'what...', 'hmm...', 'ooh what?'],
+};
+
+// Tiered reactions for INTRO phase
+const INTRO_REACTIONS = {
+  silence_short: { // 3-4s silent
+    soft:  ['mhm... I see you...', 'hey friend... still here...'],
+    warm:  ['hi... what is your name?', 'hey... you there friend?'],
+    big:   ['HEY!!! come closer friend!!!', 'OH I see you!!! hi hi!!!'],
+  },
+  silence_long: { // 6s+ silent
+    soft:  ['hey friend... are you shy?', 'mhm... I will wait...'],
+    warm:  ['friend! tell me your name!', 'come on... I want to meet you!'],
+    big:   ['HELLO!!! Where did you go!!! Come back!!!', 'HEY DANCER!!! I see you!!!'],
+  },
+  kid_smiling: {
+    soft:  ['oh... that smile...', 'mhm I see that smile...'],
+    warm:  ['YES! that smile! I love it!', 'oh that smile!! beautiful!'],
+    big:   ['OH MY!!! That SMILE!!! Look at you!!!', 'YES YES YES!!! Smile dancer!!!'],
+  },
+  kid_moving: {
+    soft:  ['mhm... you wiggle nice...', 'oh you moving...'],
+    warm:  ['yes! moving! good!', 'oh you are dancing already!'],
+    big:   ['WHOA!!! Already dancing!!!', 'LOOK AT YOU MOVING!!! YES!!!'],
+  },
+};
+
+function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function ensureNerves(sid) {
+  if (!novaNerves.has(sid)) {
+    novaNerves.set(sid, {
+      lastSpokeAt: Date.now(),
+      lastMicroAt: 0,
+      lastObservation: null,
+      kidSilentSince: Date.now(),
+      kidEnergyHistory: [],
+      lastEnergyTier: 'warm',
+      observed: false,
+      lastTickAt: 0,
+    });
+  }
+  return novaNerves.get(sid);
+}
+
+// Emotional controller — decide what Nova should do RIGHT NOW
+function decideNovaAction(sid, sensors) {
+  const nerves = ensureNerves(sid);
+  const now = Date.now();
+  const sinceSpoke = now - nerves.lastSpokeAt;
+  const sinceMicro = now - nerves.lastMicroAt;
+  const silentMs = now - nerves.kidSilentSince;
+
+  // Update silence tracking
+  if (sensors.micLevel > 0.15 || sensors.motionLevel > 0.3) {
+    nerves.kidSilentSince = now;
+  }
+
+  // RULE 1: First-frame observation (highest priority, fires once)
+  if (!nerves.observed && sensors.frameDataUrl) {
+    return { type: 'observe_first_frame' };
+  }
+
+  // RULE 2: Kid is smiling — celebrate with big reaction (every 8s max)
+  if (sensors.smiling === true && sinceSpoke > 4000) {
+    const tier = nerves.lastEnergyTier === 'big' ? 'big' : 'warm';
+    nerves.lastEnergyTier = tier;
+    return {
+      type: 'react',
+      text: pickRandom(INTRO_REACTIONS.kid_smiling[tier]),
+      energy: tier,
+    };
+  }
+
+  // RULE 3: Kid moving — acknowledge (every 6s max)
+  if (sensors.motionLevel > 0.5 && sinceSpoke > 5000) {
+    const tier = 'warm';
+    nerves.lastEnergyTier = tier;
+    return {
+      type: 'react',
+      text: pickRandom(INTRO_REACTIONS.kid_moving[tier]),
+      energy: tier,
+    };
+  }
+
+  // RULE 4: LONG silence (6s+) — BIG anti-mirror shock
+  if (silentMs > 6000 && sinceSpoke > 5000) {
+    nerves.kidSilentSince = now; // reset so we don't spam
+    nerves.lastEnergyTier = 'big';
+    return {
+      type: 'react',
+      text: pickRandom(INTRO_REACTIONS.silence_long.big),
+      energy: 'big',
+    };
+  }
+
+  // RULE 5: Medium silence (3s+) — warm nudge
+  if (silentMs > 3500 && sinceSpoke > 4000) {
+    nerves.kidSilentSince = now;
+    nerves.lastEnergyTier = 'warm';
+    return {
+      type: 'react',
+      text: pickRandom(INTRO_REACTIONS.silence_short.warm),
+      energy: 'warm',
+    };
+  }
+
+  // RULE 6: Micro-tick — fire tiny vocalization if Nova quiet 2.5s+
+  // Keeps her face alive between real reactions
+  if (sinceSpoke > 2500 && sinceMicro > 2500) {
+    // Pick tier based on kid energy
+    let microTier = 'soft';
+    if (sensors.motionLevel > 0.4 || sensors.smiling) microTier = 'warm';
+    if (sensors.motionLevel > 0.7) microTier = 'big';
+    
+    nerves.lastMicroAt = now;
+    return {
+      type: 'micro',
+      text: pickRandom(MICRO_REACTIONS[microTier]),
+      energy: microTier,
+    };
+  }
+
+  return { type: 'wait' };
+}
+
+// Observe kid via Claude vision (free observation, full freedom)
+async function observeKidFrame(frameDataUrl) {
+  try {
+    // Strip data URL prefix
+    const base64 = frameDataUrl.replace(/^data:image\/\w+;base64,/, '');
+    const mediaType = frameDataUrl.match(/^data:(image\/\w+);/)?.[1] || 'image/jpeg';
+    
+    const result = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 80,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: { type: 'base64', media_type: mediaType, data: base64 },
+          },
+          {
+            type: 'text',
+            text: `You are Nova, a warm friendly dance teacher for a kid. Look at this webcam image and notice ONE delightful, specific visual detail to comment on warmly — like clothing, hair, room, smile, lighting, a toy, anything visible. Reply with ONLY what Nova would say out loud, 5-12 words, warm and excited. NO preamble. Example: "Oh! I love your yellow shirt! Did you pick it yourself?"`,
+          },
+        ],
+      }),
+    });
+    
+    const text = result.content?.[0]?.text?.trim() || '';
+    return text.replace(/^["']|["']$/g, ''); // strip quotes
+  } catch (e) {
+    console.error('[observe-kid]', e?.message || e);
+    return null;
+  }
+}
+
+// Endpoint: first-frame observation
+app.post('/observe-kid', async (req, res) => {
+  try {
+    const { sessionId, frameDataUrl } = req.body || {};
+    if (!sessionId || !frameDataUrl) {
+      return res.status(400).json({ error: 'missing sessionId or frameDataUrl' });
+    }
+    const nerves = ensureNerves(sessionId);
+    if (nerves.observed) {
+      return res.json({ ok: true, alreadyObserved: true, text: nerves.lastObservation });
+    }
+    nerves.observed = true; // set first to prevent double-fire
+    
+    const observation = await observeKidFrame(frameDataUrl);
+    if (observation) {
+      nerves.lastObservation = observation;
+      nerves.lastSpokeAt = Date.now();
+      const s = sessions.get(sessionId);
+      if (s?.log) s.log('v111-observe', `Nova first-frame: "${observation}"`);
+      console.log(`[v111-observe] sid=${sessionId.slice(0,8)} → "${observation}"`);
+      return res.json({ ok: true, text: observation, energy: 'warm' });
+    }
+    nerves.observed = false; // failed, allow retry
+    return res.json({ ok: false, text: null });
+  } catch (e) {
+    console.error('[observe-kid]', e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// Endpoint: perception tick — browser pushes sensors, server decides action
+app.post('/perceive', (req, res) => {
+  try {
+    const { sessionId, phase, sensors } = req.body || {};
+    if (!sessionId) return res.status(400).json({ error: 'missing sessionId' });
+    
+    // Only active during recognition phase
+    if (phase !== 'recognition') {
+      return res.json({ action: { type: 'wait' }, phase, active: false });
+    }
+    
+    const nerves = ensureNerves(sessionId);
+    nerves.lastTickAt = Date.now();
+    
+    const action = decideNovaAction(sessionId, sensors || {});
+    
+    if (action.type === 'react' || action.type === 'micro') {
+      nerves.lastSpokeAt = Date.now();
+      const s = sessions.get(sessionId);
+      if (s?.log) s.log('v111-tick', `${action.type}/${action.energy}: "${action.text}"`);
+    }
+    
+    res.json({ action, phase, active: true });
+  } catch (e) {
+    console.error('[perceive]', e);
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// Endpoint: mark Nova as having spoken (browser tells server "I just played audio")
+app.post('/nerves-spoke', (req, res) => {
+  const { sessionId, text } = req.body || {};
+  if (!sessionId) return res.status(400).json({ error: 'missing sessionId' });
+  const nerves = ensureNerves(sessionId);
+  nerves.lastSpokeAt = Date.now();
+  res.json({ ok: true });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // LAYER 1 — IDENTITY (v110 KIDS — Lexi-flavor: follow-ups, vision-acting)
 // ═══════════════════════════════════════════════════════════════
 const NOVA_IDENTITY = `You are Nova — a CALM, soft, deeply empathetic dance friend for kids aged 4-8.
@@ -1091,6 +1334,7 @@ app.post('/end-session', async (req, res) => {
       console.log(`[end-session] RPC closed sid=${sessionId?.slice(0,8)}`);
     }
     sessions.delete(sessionId);
+    novaNerves.delete(sessionId); // v111: clean up nervous state
     res.json({ ok: true });
   } catch (e) {
     console.error('[end-session]', e?.message);
